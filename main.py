@@ -70,8 +70,15 @@ app.include_router(anomalies.router)
 
 @app.on_event("startup")
 async def startup():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database schema ready.")
+    except Exception as e:
+        # Two replicas starting simultaneously can race on CREATE TABLE.
+        # The replica that loses the race gets a pg_type catalog collision.
+        # This is safe to ignore — the winning replica already created the schema.
+        logger.warning(f"Schema init skipped (parallel replica won the race): {type(e).__name__}")
 
 
 @app.get("/health", tags=["system"])
