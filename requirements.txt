@@ -1,0 +1,18 @@
+# OpticRetail Detection Pipeline Dependencies
+# Lightweight stack — no GPU required, runs on any system
+
+# Computer vision — headless for server environments
+opencv-python-headless==4.9.0.80
+
+# ONNX Runtime — runs YOLOv8 ONNX model without heavy ultralytics package
+# Cross-platform, ~15MB, no CUDA required
+onnxruntime==1.18.0
+
+# HTTP client for emitting events to the FastAPI ingest endpoint
+requests==2.31.0
+
+# Environment variable loading
+python-dotenv==1.0.1
+
+# Numerical operations for bounding box math
+numpy==1.26.4
