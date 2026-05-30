@@ -1,0 +1,12 @@
+# Docker
+.env
+*.log
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Accidental local clones (Just in case you run git clone manually)
+frontend/
+backend/
