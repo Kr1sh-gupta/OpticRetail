@@ -1,3 +1,19 @@
+-- Create the events table (owned by PostgreSQL init so backends never race to create it)
+CREATE TABLE IF NOT EXISTS events (
+    event_id    VARCHAR NOT NULL,
+    store_id    VARCHAR NOT NULL,
+    camera_id   VARCHAR NOT NULL,
+    visitor_id  VARCHAR NOT NULL,
+    event_type  VARCHAR NOT NULL,
+    timestamp   TIMESTAMP WITH TIME ZONE NOT NULL,
+    zone_id     VARCHAR,
+    dwell_ms    INTEGER,
+    is_staff    BOOLEAN,
+    confidence  FLOAT NOT NULL,
+    metadata_json JSON,
+    PRIMARY KEY (event_id)
+);
+
 -- Create the pos_transactions table
 CREATE TABLE IF NOT EXISTS pos_transactions (
     store_id VARCHAR(50),
