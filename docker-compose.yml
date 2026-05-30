@@ -1,0 +1,67 @@
+version: '3.8'
+
+# Set a custom project name to ensure isolation
+name: opticretail-demo
+
+services:
+  # ----------------------------------------------------
+  # DATABASE LAYER
+  # ----------------------------------------------------
+  db:
+    build:
+      context: .
+      dockerfile: db.Dockerfile
+    container_name: opticretail_demo_postgres
+    environment:
+      POSTGRES_USER: optic_user
+      POSTGRES_PASSWORD: optic_password
+      POSTGRES_DB: optic_db
+    # Not mapping ports to host to ensure complete isolation
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U optic_user -d optic_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------
+  # BACKEND API LAYER (Load Balanced)
+  # ----------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://optic_user:optic_password@db:5432/optic_db
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+    # Ensure Docker restarts containers if they crash
+    restart: always
+
+  # ----------------------------------------------------
+  # LOAD BALANCER LAYER
+  # ----------------------------------------------------
+  lb:
+    image: nginx:alpine
+    container_name: opticretail_demo_lb
+    ports:
+      - "8000:80" # Exposed to host: Backend API Load Balancer
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+
+  # ----------------------------------------------------
+  # FRONTEND LAYER
+  # ----------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+    container_name: opticretail_demo_frontend
+    ports:
+      - "3000:80" # Exposed to host: Frontend UI
+    depends_on:
+      - backend
