@@ -63,6 +63,8 @@ services:
     container_name: opticretail_demo_frontend
     ports:
       - "3000:80" # Exposed to host: Frontend UI
+    volumes:
+      - cctv_videos:/usr/share/nginx/html/videos:ro
     depends_on:
       - backend
 
