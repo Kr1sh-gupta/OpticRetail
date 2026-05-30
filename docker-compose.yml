@@ -65,3 +65,29 @@ services:
       - "3000:80" # Exposed to host: Frontend UI
     depends_on:
       - backend
+
+  # ----------------------------------------------------
+  # COMPUTER VISION PIPELINE SIMULATOR (Edge Layer)
+  # ----------------------------------------------------
+  pipeline:
+    build:
+      context: .
+      dockerfile: pipeline.Dockerfile
+    container_name: opticretail_demo_pipeline
+    volumes:
+      # Mount CCTV footage directory to give the container access to local videos
+      - ../CCTV Footage:/app/CCTV Footage
+    environment:
+      - API_INGEST_URL=http://lb:80/events/ingest
+      - EMIT_BATCH_SIZE=50
+      - STORE_ID=STORE_BLR_002
+      - CONFIDENCE_THRESHOLD=0.40
+      - FRAME_SKIP=5
+      # Map camera sources to look inside the mounted docker volume
+      - CAM1_SOURCE=/app/CCTV Footage/CAM 1.mp4
+      - CAM2_SOURCE=/app/CCTV Footage/CAM 2.mp4
+      - CAM3_SOURCE=/app/CCTV Footage/CAM 3.mp4
+      - CAM4_SOURCE=/app/CCTV Footage/CAM 4.mp4
+      - CAM5_SOURCE=/app/CCTV Footage/CAM 5.mp4
+    depends_on:
+      - lb
