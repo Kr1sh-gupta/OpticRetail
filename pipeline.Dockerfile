@@ -12,8 +12,15 @@ WORKDIR /app
 # Clone the repository directly from the dedicated pipeline branch
 RUN git clone -b pipeline https://github.com/Kr1sh-gupta/OpticRetail.git .
 
-# Install dependencies from the root directory
+# Install runtime dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Run the setup script to export yolov8n.onnx, ensure NumPy 1.x compatibility, and start the pipeline!
-CMD ["sh", "-c", "python setup_model.py && pip install \"numpy<2\" && python detect.py"]
+# Bake yolov8n.onnx into the image at BUILD TIME (avoids runtime download timeouts)
+# ultralytics is only needed for the one-time export — uninstall it to keep the image lean
+RUN pip install ultralytics -q && python setup_model.py && pip uninstall -y ultralytics
+
+# Fix NumPy 2.x incompatibility with onnxruntime
+RUN pip install "numpy<2" -q
+
+# At runtime, just run the pipeline — model is already in the image
+CMD ["python", "detect.py"]
