@@ -1,5 +1,5 @@
 # Stage 1: Build the React Application
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 # Install git so we can pull the latest branch from GitHub
 RUN apk add --no-cache git
