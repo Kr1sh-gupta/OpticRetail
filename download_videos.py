@@ -45,10 +45,10 @@ def download_video(filename: str, file_id: str) -> bool:
         logger.warning(f"[SKIP] {filename} — no Drive ID configured. Set it in download_videos.py")
         return False
 
-    url = f"https://drive.google.com/uc?id={file_id}"
-    logger.info(f"[DOWNLOAD] {filename} from Google Drive...")
+    logger.info(f"[DOWNLOAD] {filename} from Google Drive (id={file_id})...")
     try:
-        gdown.download(url, dest, quiet=False)
+        # Use id= parameter — handles Google's large-file confirmation gate automatically
+        gdown.download(id=file_id, output=dest, quiet=False)
         logger.info(f"[OK] {filename} saved to {dest}")
         return True
     except Exception as e:
