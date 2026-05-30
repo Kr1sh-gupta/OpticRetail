@@ -64,6 +64,19 @@ if __name__ == "__main__":
             success_count += 1
 
     logger.info(f"Download complete: {success_count}/{len(VIDEOS)} videos ready.")
+    
+    # Ensure world-readable permissions so other containers (like Nginx frontend) can serve the videos
+    try:
+        os.chmod(VIDEO_DIR, 0o755)
+        for root, dirs, files in os.walk(VIDEO_DIR):
+            for d in dirs:
+                os.chmod(os.path.join(root, d), 0o755)
+            for f in files:
+                os.chmod(os.path.join(root, f), 0o644)
+        logger.info("Fixed video volume permissions for world-readability.")
+    except Exception as e:
+        logger.warning(f"Could not fix permissions: {e}")
+        
     if success_count == 0:
         logger.warning(
             "No videos available! Fill in Google Drive IDs in download_videos.py, "
