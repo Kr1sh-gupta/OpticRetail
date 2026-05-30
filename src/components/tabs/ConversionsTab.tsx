@@ -1,6 +1,37 @@
+import { useState, useEffect } from 'react';
 import { Activity, TrendingUp, TrendingDown } from 'lucide-react';
 
 export function ConversionsTab() {
+  const [metrics, setMetrics] = useState({
+    unique_visitors: 0, conversion_rate: 0, queue_depth: 0, abandonment_rate: 0
+  });
+
+  const [funnelStages, setFunnelStages] = useState<any[]>([]);
+
+  useEffect(() => {
+    const storeId = "STORE_BLR_002";
+    
+    const fetchData = () => {
+      fetch(`http://localhost:8000/stores/${storeId}/metrics`)
+        .then(res => res.json())
+        .then(data => { if (!data.error) setMetrics(data); })
+        .catch(console.error);
+
+      fetch(`http://localhost:8000/stores/${storeId}/funnel`)
+        .then(res => res.json())
+        .then(data => { if (data.stages) setFunnelStages(data.stages); })
+        .catch(console.error);
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Use the metrics from API to compute cart abandonment and gross conversion
+  const grossConversion = (metrics.conversion_rate * 100).toFixed(1) + "%";
+  const abandonment = (metrics.abandonment_rate * 100).toFixed(1) + "%";
+
   return (
     <div className="content-grid" style={{ gap: '1.5rem', paddingBottom: '2rem' }}>
       
@@ -23,22 +54,27 @@ export function ConversionsTab() {
       </div>
 
       {/* TOP METRICS (BENTO) */}
-      <MetricCard title="Gross Conversion Rate" value="18.2%" trend="+2.4%" positive span={3} />
-      <MetricCard title="Avg. Queue Time" value="3m 42s" trend="-15s" positive span={3} />
-      <MetricCard title="Cart Abandonment" value="4.1%" trend="+0.5%" positive={false} span={3} />
-      <MetricCard title="Revenue Protected" value="$2,140" trend="+12%" positive span={3} />
+      <MetricCard title="Gross Conversion Rate" value={grossConversion} trend="Live" positive span={3} />
+      <MetricCard title="Current Queue Depth" value={metrics.queue_depth + " people"} trend="Live" positive span={3} />
+      <MetricCard title="Cart Abandonment" value={abandonment} trend="Live" positive={false} span={3} />
+      <MetricCard title="Total Visitors" value={metrics.unique_visitors} trend="Live" positive span={3} />
 
       {/* THE FUNNEL */}
       <div className="card" style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column' }}>
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '2rem' }}>Store-to-Purchase Funnel</h3>
         <div style={{ display: 'flex', flex: 1, alignItems: 'center', gap: '1rem' }}>
-           <FunnelStage label="Store Entry" value="1,240" percentage="100%" color="var(--accent)" height="100%" />
-           <div style={{ color: 'var(--text-secondary)' }}>→</div>
-           <FunnelStage label="Zone Interaction" value="842" percentage="68%" color="var(--accent)" height="80%" />
-           <div style={{ color: 'var(--text-secondary)' }}>→</div>
-           <FunnelStage label="Queue Joined" value="320" percentage="26%" color="var(--warning)" height="45%" />
-           <div style={{ color: 'var(--text-secondary)' }}>→</div>
-           <FunnelStage label="POS Success" value="226" percentage="18%" color="var(--success)" height="30%" />
+           {funnelStages.length > 0 ? funnelStages.map((stage, idx) => {
+             const colors = ["var(--accent)", "var(--accent)", "var(--warning)", "var(--success)"];
+             const maxCount = funnelStages[0].count || 1;
+             const height = Math.max((stage.count / maxCount) * 100, 10) + "%";
+             const drop = idx === 0 ? "100%" : (100 - stage.drop_off_pct).toFixed(0) + "%";
+             return (
+               <div key={stage.stage} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                 <FunnelStage label={stage.stage} value={stage.count} percentage={drop} color={colors[idx]} height={height} />
+                 {idx < funnelStages.length - 1 && <div style={{ color: 'var(--text-secondary)' }}>→</div>}
+               </div>
+             );
+           }) : <div style={{ color: 'var(--text-secondary)' }}>Loading funnel...</div>}
         </div>
       </div>
 
@@ -68,7 +104,7 @@ export function ConversionsTab() {
 
       {/* ZONE ATTRIBUTION TABLE */}
       <div className="card" style={{ gridColumn: 'span 12' }}>
-         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.5rem' }}>Attribution by Zone</h3>
+         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.5rem' }}>Attribution by Zone (Mock)</h3>
          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
@@ -99,7 +135,7 @@ function MetricCard({ title, value, trend, positive, span }: any) {
       <div style={{ fontSize: '2rem', fontWeight: 600, margin: '1rem 0', color: 'var(--text-primary)', letterSpacing: '-1px' }}>{value}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', fontWeight: 600, color: positive ? 'var(--success)' : 'var(--danger)' }}>
         {positive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-        {trend} vs last week
+        {trend}
       </div>
     </div>
   );
@@ -109,7 +145,7 @@ function FunnelStage({ label, value, percentage, color, height }: any) {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '200px', justifyContent: 'flex-end', gap: '1rem' }}>
       <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>{percentage}</div>
-      <div style={{ width: '100%', height: height, background: 'var(--bg-color)', borderRadius: '8px', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ width: '100%', height: height, background: 'var(--bg-color)', borderRadius: '8px', position: 'relative', overflow: 'hidden', transition: 'height 0.5s ease' }}>
          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '100%', background: color, opacity: 0.2 }} />
          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '4px', background: color }} />
       </div>

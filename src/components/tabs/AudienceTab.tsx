@@ -1,11 +1,34 @@
+import { useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 
 export function AudienceTab() {
+  const [heatmap, setHeatmap] = useState<any>({
+    zones: {},
+    data_confidence: true
+  });
+
+  useEffect(() => {
+    const storeId = "STORE_BLR_002";
+    const fetchHeatmap = () => {
+      fetch(`http://localhost:8000/stores/${storeId}/heatmap`)
+        .then(res => res.json())
+        .then(data => { if (data.zones) setHeatmap(data); })
+        .catch(console.error);
+    };
+
+    fetchHeatmap();
+    const interval = setInterval(fetchHeatmap, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="content-grid">
       <div style={{ gridColumn: 'span 12', marginBottom: '-1rem' }}>
         <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Spatial & Audience Intelligence</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Real-time Re-ID tracking, VLM clothing signatures, and zone density.</p>
+        {!heatmap.data_confidence && (
+          <p style={{ color: 'var(--warning)', fontSize: '0.75rem', fontWeight: 600, marginTop: '0.25rem' }}>⚠️ LOW DATA CONFIDENCE: Less than 20 sessions recorded.</p>
+        )}
       </div>
 
       {/* STORE FLOOR PLAN HEATMAP */}
@@ -20,17 +43,17 @@ export function AudienceTab() {
 
         {/* Abstract Store Map Layout */}
         <div style={{ flex: 1, background: 'var(--bg-color)', borderRadius: '8px', border: '1px solid var(--border-color)', position: 'relative', overflow: 'hidden', display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: '4px', padding: '4px' }}>
-          <ZoneBox name="ENTRANCE" shoppers={2} staff={1} active />
-          <ZoneBox name="SKINCARE" shoppers={8} staff={0} alert="HIGH DENSITY" />
-          <ZoneBox name="FRAGRANCE" shoppers={3} staff={1} />
-          <ZoneBox name="CHECKOUT" shoppers={12} staff={1} alert="BOTTLENECK" />
+          <ZoneBox name="ENTRANCE" shoppers={Math.round((heatmap.zones["ENTRY_EXIT"]?.heat_index || 0) / 10)} staff={0} active />
+          <ZoneBox name="SKINCARE" shoppers={Math.round((heatmap.zones["SKINCARE"]?.heat_index || 0) / 10)} staff={0} alert={(heatmap.zones["SKINCARE"]?.heat_index || 0) > 80 ? "HIGH DENSITY" : null} />
+          <ZoneBox name="FRAGRANCE" shoppers={Math.round((heatmap.zones["FRAGRANCE"]?.heat_index || 0) / 10)} staff={0} />
+          <ZoneBox name="CHECKOUT" shoppers={Math.round((heatmap.zones["BILLING"]?.heat_index || 0) / 10)} staff={0} alert={(heatmap.zones["BILLING"]?.heat_index || 0) > 80 ? "BOTTLENECK" : null} />
         </div>
       </div>
 
       {/* VLM VISITOR SIGNATURES */}
       <div className="card" style={{ gridColumn: 'span 5' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-          <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>VLM Visitor Signatures</h3>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>VLM Visitor Signatures (Mock)</h3>
           <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent)', background: 'rgba(59, 130, 246, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>OSNET RE-ID</span>
         </div>
         

@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Users, ShoppingCart, Activity, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
 
 export function OverviewTab() {
-  const [metrics] = useState({
-    unique_visitors: 142, conversion_rate: 0.18, queue_depth: 2, abandonment_rate: 0.05
+  const [metrics, setMetrics] = useState({
+    unique_visitors: 0, conversion_rate: 0, queue_depth: 0, abandonment_rate: 0
   });
+
+  const [funnelStages, setFunnelStages] = useState<any[]>([]);
 
   const [events] = useState([
     { id: 1, type: "ZONE_ENTER", zone: "SKINCARE", time: "Just now" },
@@ -13,36 +15,73 @@ export function OverviewTab() {
     { id: 4, type: "ZONE_DWELL", zone: "FRAGRANCE", time: "8 min ago" },
   ]);
 
+  useEffect(() => {
+    const storeId = "STORE_BLR_002";
+    
+    // Fetch metrics
+    fetch(`http://localhost:8000/stores/${storeId}/metrics`)
+      .then(res => res.json())
+      .then(data => {
+        if (!data.error) setMetrics(data);
+      })
+      .catch(console.error);
+
+    // Fetch funnel
+    fetch(`http://localhost:8000/stores/${storeId}/funnel`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.stages) setFunnelStages(data.stages);
+      })
+      .catch(console.error);
+
+    // Set up polling every 5 seconds for live feel
+    const interval = setInterval(() => {
+      fetch(`http://localhost:8000/stores/${storeId}/metrics`)
+        .then(res => res.json())
+        .then(data => { if (!data.error) setMetrics(data); })
+        .catch(() => {});
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="content-grid">
       <div className="card" style={{ gridColumn: 'span 3' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Total Visitors</span><Users size={20} color="var(--text-secondary)" /></div>
         <div className="metric-value">{metrics.unique_visitors}</div>
-        <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> +12.5%</div>
+        <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> Live</div>
       </div>
       <div className="card" style={{ gridColumn: 'span 3' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Conversion Rate</span><ShoppingCart size={20} color="var(--text-secondary)" /></div>
         <div className="metric-value">{(metrics.conversion_rate * 100).toFixed(1)}%</div>
-        <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> +2.1%</div>
+        <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> Live</div>
       </div>
       <div className="card" style={{ gridColumn: 'span 3' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Billing Queue</span><Activity size={20} color="var(--text-secondary)" /></div>
         <div className="metric-value">{metrics.queue_depth} <span style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>people</span></div>
-        <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> Normal</div>
+        <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> Live</div>
       </div>
       <div className="card" style={{ gridColumn: 'span 3' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Abandonment Rate</span><AlertCircle size={20} color="var(--text-secondary)" /></div>
         <div className="metric-value">{(metrics.abandonment_rate * 100).toFixed(1)}%</div>
-        <div className="trend-down" style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}><TrendingDown size={16} /> Stable</div>
+        <div className="trend-down" style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}><TrendingDown size={16} /> Live</div>
       </div>
 
       <div className="card" style={{ gridColumn: 'span 8', minHeight: '350px' }}>
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '2rem' }}>Conversion Funnel</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <FunnelBar label="Store Entry" count={142} percentage={100} color="var(--accent)" />
-          <FunnelBar label="Zone Visit" count={118} percentage={83} color="var(--accent)" />
-          <FunnelBar label="Billing Queue" count={45} percentage={31} color="var(--warning)" />
-          <FunnelBar label="Purchase (POS)" count={26} percentage={18} color="var(--success)" />
+          {funnelStages.length > 0 ? funnelStages.map((stage, idx) => {
+             const colors = ["var(--accent)", "var(--accent)", "var(--warning)", "var(--success)"];
+             const color = colors[idx % colors.length];
+             const maxCount = funnelStages[0].count || 1;
+             const percentage = Math.max((stage.count / maxCount) * 100, 2); // At least 2% to show the bar
+             return (
+               <FunnelBar key={stage.stage} label={stage.stage} count={stage.count} percentage={percentage} color={color} />
+             );
+          }) : (
+             <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Loading funnel data...</div>
+          )}
         </div>
       </div>
       <div className="card" style={{ gridColumn: 'span 4' }}>
@@ -73,7 +112,7 @@ function FunnelBar({ label, count, percentage, color }: any) {
     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
       <div style={{ width: '120px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{label}</div>
       <div style={{ flex: 1, background: 'var(--bg-color)', height: '24px', borderRadius: '12px', overflow: 'hidden' }}>
-        <div style={{ width: `${percentage}%`, height: '100%', background: color, borderRadius: '12px' }} />
+        <div style={{ width: `${percentage}%`, height: '100%', background: color, borderRadius: '12px', transition: 'width 0.5s ease' }} />
       </div>
       <div style={{ width: '80px', textAlign: 'right', fontSize: '0.875rem', fontWeight: 600 }}>{count}</div>
     </div>

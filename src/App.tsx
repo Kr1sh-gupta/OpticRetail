@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './index.css';
 
 import { Sidebar } from './components/layout/Sidebar';
@@ -10,11 +10,27 @@ import { ConversionsTab } from './components/tabs/ConversionsTab';
 import { AnomaliesTab } from './components/tabs/AnomaliesTab';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(() => {
+    return window.location.hash.replace('#', '') || 'overview';
+  });
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '') || 'overview';
+      setActiveTab(hash);
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
   
+  const setTab = (tab: string) => {
+    window.location.hash = tab;
+    setActiveTab(tab);
+  };
+
   return (
     <div className="dashboard">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setTab} />
       <main className="main-content">
         <TopNav />
         {activeTab === 'overview' && <OverviewTab />}
