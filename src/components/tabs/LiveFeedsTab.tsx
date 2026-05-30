@@ -121,7 +121,7 @@ export function LiveFeedsTab() {
           <div style={{ position: 'absolute', inset: 0, opacity: 0.3, backgroundImage: 'radial-gradient(circle, #222 1px, transparent 1px)', backgroundSize: '12px 12px' }} />
 
           <video
-            src={`/@fs/e:/purplle/CCTV Footage/${activeCam.file}`}
+            src={`/videos/${activeCam.file}`}
             autoPlay
             loop
             muted
@@ -215,7 +215,7 @@ export function LiveFeedsTab() {
         >
           <div style={{ height: '150px', background: '#000', borderRadius: '8px', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)', position: 'relative', overflow: 'hidden' }}>
             <video
-              src={`/@fs/e:/purplle/CCTV Footage/${cam.file}`}
+              src={`/videos/${cam.file}`}
               autoPlay
               loop
               muted
