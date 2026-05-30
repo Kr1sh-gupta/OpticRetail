@@ -1,0 +1,36 @@
+# Python Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python Cache & Compiled Files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Local Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# System & OS Files
+.DS_Store
+Thumbs.db
+
+# Test Coverage & Logs
+.coverage
+htmlcov/
+*.log
