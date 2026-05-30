@@ -16,7 +16,9 @@ services:
       POSTGRES_USER: optic_user
       POSTGRES_PASSWORD: optic_password
       POSTGRES_DB: optic_db
-    # Not mapping ports to host to ensure complete isolation
+    # Map ports to host to allow local development and API access
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U optic_user -d optic_db"]
       interval: 5s
