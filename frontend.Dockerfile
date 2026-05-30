@@ -9,9 +9,6 @@ WORKDIR /app
 # Clone the repository directly from the frontend branch
 RUN git clone -b frontend https://github.com/Kr1sh-gupta/OpticRetail.git .
 
-# Move into the frontend directory
-WORKDIR /app/frontend
-
 # Install dependencies and build
 RUN npm install
 RUN npm run build
@@ -20,7 +17,7 @@ RUN npm run build
 FROM nginx:alpine
 
 # Copy the built static files to Nginx
-COPY --from=builder /app/frontend/dist /usr/share/nginx/html
+COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Expose port 80 inside the container
 EXPOSE 80

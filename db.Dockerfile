@@ -7,7 +7,7 @@ RUN apk add --no-cache git
 RUN git clone -b backend https://github.com/Kr1sh-gupta/OpticRetail.git /tmp/repo
 
 # Copy the initialization script to Postgres's auto-init directory
-RUN cp /tmp/repo/backend/init.sql /docker-entrypoint-initdb.d/init.sql
+RUN cp /tmp/repo/init.sql /docker-entrypoint-initdb.d/init.sql
 
 # Cleanup the repo to keep the image small
 RUN rm -rf /tmp/repo

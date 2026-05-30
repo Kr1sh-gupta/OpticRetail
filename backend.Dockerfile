@@ -8,9 +8,6 @@ WORKDIR /app
 # Clone the repository directly from the backend branch
 RUN git clone -b backend https://github.com/Kr1sh-gupta/OpticRetail.git .
 
-# Move into the backend directory
-WORKDIR /app/backend
-
 # Install python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
