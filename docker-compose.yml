@@ -71,23 +71,30 @@ services:
   # ----------------------------------------------------
   pipeline:
     build:
-      context: .
-      dockerfile: pipeline.Dockerfile
+      # Context is the purplle root so the Dockerfile can COPY pipeline/yolov8n.onnx
+      context: ..
+      dockerfile: demo/pipeline.Dockerfile
     container_name: opticretail_demo_pipeline
     volumes:
-      # Mount CCTV footage directory to give the container access to local videos
-      - ../CCTV Footage:/app/CCTV Footage
+      # Named volume for video storage — populated by download_videos.py on first run.
+      # ALTERNATIVE: Uncomment the line below to use local videos instead of Drive:
+      # - ../CCTV Footage:/app/videos
+      - cctv_videos:/app/videos
     environment:
       - API_INGEST_URL=http://lb:80/events/ingest
       - EMIT_BATCH_SIZE=50
       - STORE_ID=STORE_BLR_002
       - CONFIDENCE_THRESHOLD=0.40
       - FRAME_SKIP=5
-      # Map camera sources to look inside the mounted docker volume
-      - CAM1_SOURCE=/app/CCTV Footage/CAM 1.mp4
-      - CAM2_SOURCE=/app/CCTV Footage/CAM 2.mp4
-      - CAM3_SOURCE=/app/CCTV Footage/CAM 3.mp4
-      - CAM4_SOURCE=/app/CCTV Footage/CAM 4.mp4
-      - CAM5_SOURCE=/app/CCTV Footage/CAM 5.mp4
+      # Videos are downloaded to /app/videos/ by download_videos.py
+      - CAM1_SOURCE=/app/videos/CAM 1.mp4
+      - CAM2_SOURCE=/app/videos/CAM 2.mp4
+      - CAM3_SOURCE=/app/videos/CAM 3.mp4
+      - CAM4_SOURCE=/app/videos/CAM 4.mp4
+      - CAM5_SOURCE=/app/videos/CAM 5.mp4
     depends_on:
       - lb
+
+volumes:
+  # Persistent volume so videos survive container restarts (no re-download needed)
+  cctv_videos:
