@@ -25,11 +25,11 @@ os.makedirs(VIDEO_DIR, exist_ok=True)
 # ─── FILL IN YOUR GOOGLE DRIVE FILE IDs BELOW ────────────────────────────────
 # Format: ("filename", "Google Drive File ID")
 VIDEOS = [
-    ("CAM 1.mp4", "PASTE_DRIVE_FILE_ID_FOR_CAM1_HERE"),
-    ("CAM 2.mp4", "PASTE_DRIVE_FILE_ID_FOR_CAM2_HERE"),
-    ("CAM 3.mp4", "PASTE_DRIVE_FILE_ID_FOR_CAM3_HERE"),
-    ("CAM 4.mp4", "PASTE_DRIVE_FILE_ID_FOR_CAM4_HERE"),
-    ("CAM 5.mp4", "PASTE_DRIVE_FILE_ID_FOR_CAM5_HERE"),
+    ("CAM 1.mp4", "1Wfiq5LbW7cVCfoV0ATwx5-ARSsZp427v"),
+    ("CAM 2.mp4", "1y3xQxR5ZsRG9VgNa37jp8j8wVFT6husY"),
+    ("CAM 3.mp4", "1KtKU99e65FRj5Yd1-_2WPWFaB2vjdfsy"),
+    ("CAM 4.mp4", "1fstBVbIKUc75MaUVwvXjrIN5M_lP_udc"),
+    ("CAM 5.mp4", "1ECduXW94UOMWIeAoMAqqhhZKoc1_sMGW"),
 ]
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -48,7 +48,7 @@ def download_video(filename: str, file_id: str) -> bool:
     url = f"https://drive.google.com/uc?id={file_id}"
     logger.info(f"[DOWNLOAD] {filename} from Google Drive...")
     try:
-        gdown.download(url, dest, quiet=False, fuzzy=True)
+        gdown.download(url, dest, quiet=False)
         logger.info(f"[OK] {filename} saved to {dest}")
         return True
     except Exception as e:
