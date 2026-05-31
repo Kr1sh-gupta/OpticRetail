@@ -222,19 +222,40 @@ def is_staff_by_clothing(frame: np.ndarray, bbox) -> bool:
 
 
 def get_color_name(hsv: Tuple[float, float, float]) -> str:
-    """Dynamically converts HSV coordinates to a human-readable clothing color name."""
+    """
+    Converts mean HSV coordinates to a human-readable clothing color name.
+    Handles dark chromatic colors (dark purple, dark blue, etc.) under
+    store spotlight compression where Saturation can appear artificially low.
+    """
     h, s, v = hsv
-    # Normalize values (OpenCV H is 0-180, S and V are 0-255)
-    if s < 24:
-        if v < 55:
+    # OpenCV: H is 0-180, S and V are 0-255
+    hue_deg = h * 2  # Convert to standard 0-360 degrees
+
+    # --- Neutral zone check ---
+    # True black/gray/white: LOW saturation AND no dominant chromatic hue
+    if s < 30:
+        # Even with low S, if Value is in medium range and hue falls in
+        # a chromatic band, we call it a "dark <color>" not "black/gray".
+        # This handles dark purple/maroon/navy under CCTV compression.
+        if v < 45:
             return "black"
         elif v > 190:
             return "white"
+        elif v < 120 and s >= 12:
+            # Dark but has a hint of color — classify by Hue
+            # This catches dark purple (H~270-300), dark navy (H~220-260) etc.
+            if 200 <= hue_deg < 270:
+                return "dark blue"
+            elif 270 <= hue_deg < 315:
+                return "dark purple"
+            elif hue_deg < 20 or hue_deg >= 315:
+                return "dark red"
+            else:
+                return "gray"
         else:
             return "gray"
-    
-    # Analyze Hue angle
-    hue_deg = h * 2
+
+    # --- Chromatic zone: sufficient saturation → identify by Hue ---
     if hue_deg < 15 or hue_deg >= 330:
         return "red"
     elif hue_deg < 45:
@@ -245,16 +266,38 @@ def get_color_name(hsv: Tuple[float, float, float]) -> str:
         return "green"
     elif hue_deg < 255:
         return "blue"
-    elif hue_deg < 285:
+    elif hue_deg < 315:
         return "purple"
     else:
         return "pink"
 
 
+def _zone_hsv(roi: np.ndarray) -> Tuple[float, float, float]:
+    """
+    Returns the mean HSV of the BRIGHT (non-shadow) pixels in a clothing ROI.
+    Pixels with V <= 35 are pure shadows/hair and are excluded to prevent
+    dark purple or dark navy fabric from being averaged down toward black.
+    Falls back to full-region mean if fewer than 10% pixels pass the filter.
+    """
+    if roi.size == 0:
+        return (0.0, 0.0, 0.0)
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    # Mask out extreme shadow pixels (V <= 35) — keeps real fabric color
+    bright_mask = hsv[:, :, 2] > 35
+    if np.sum(bright_mask) > (bright_mask.size * 0.10):
+        h_vals = hsv[:, :, 0][bright_mask].astype(np.float32)
+        s_vals = hsv[:, :, 1][bright_mask].astype(np.float32)
+        v_vals = hsv[:, :, 2][bright_mask].astype(np.float32)
+        return (float(np.mean(h_vals)), float(np.mean(s_vals)), float(np.mean(v_vals)))
+    # Fallback: full region mean
+    mean = cv2.mean(hsv)[:3]
+    return (float(mean[0]), float(mean[1]), float(mean[2]))
+
+
 def get_clothing_signatures(frame: np.ndarray, bbox) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], str]:
     """
-    Computes upper torso (shirt) and lower torso (pants) average HSV signatures
-    and returns them alongside a dynamically generated visual traits description.
+    Computes upper torso (shirt) and lower torso (pants) HSV signatures using
+    non-shadow pixel mean and returns a dynamically generated traits description.
     """
     x1, y1, x2, y2 = bbox
     width = x2 - x1
@@ -274,19 +317,9 @@ def get_clothing_signatures(frame: np.ndarray, bbox) -> Tuple[Tuple[float, float
     shirt_roi = frame[shirt_y1:shirt_y2, torso_x1:torso_x2]
     pants_roi = frame[pants_y1:pants_y2, torso_x1:torso_x2]
     
-    shirt_hsv = (0.0, 0.0, 0.0)
-    pants_hsv = (0.0, 0.0, 0.0)
+    shirt_hsv = _zone_hsv(shirt_roi)
+    pants_hsv = _zone_hsv(pants_roi)
     
-    if shirt_roi.size > 0:
-        hsv_s = cv2.cvtColor(shirt_roi, cv2.COLOR_BGR2HSV)
-        mean_s = cv2.mean(hsv_s)[:3]
-        shirt_hsv = (float(mean_s[0]), float(mean_s[1]), float(mean_s[2]))
-        
-    if pants_roi.size > 0:
-        hsv_p = cv2.cvtColor(pants_roi, cv2.COLOR_BGR2HSV)
-        mean_p = cv2.mean(hsv_p)[:3]
-        pants_hsv = (float(mean_p[0]), float(mean_p[1]), float(mean_p[2]))
-        
     shirt_color_name = get_color_name(shirt_hsv)
     pants_color_name = get_color_name(pants_hsv)
     
