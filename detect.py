@@ -466,10 +466,8 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         structured = []
         for (bbox, confidence) in raw_detections:
             shirt_color, pants_color, traits = get_clothing_signatures(frame, bbox)
-            shirt_color_name = get_color_name(shirt_color)
-            pants_color_name = get_color_name(pants_color)
-            # Staff must wear both black shirt and black pants (all-black uniform)
-            is_staff = bool(shirt_color_name == "black" and pants_color_name == "black")
+            # Staff wears neutral desaturated attire (both shirt and pants have Saturation < 28 under store spotlights)
+            is_staff = bool(shirt_color[1] < 28 and pants_color[1] < 28)
             structured.append((bbox, is_staff, confidence, shirt_color, pants_color, traits))
 
         # Update tracker with cross-camera Re-ID matching memory
