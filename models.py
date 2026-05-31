@@ -24,3 +24,23 @@ class PosTransactionRecord(Base):
     transaction_id = Column(String, primary_key=True, index=True)
     timestamp = Column(DateTime(timezone=True), index=True)
     basket_value_inr = Column(Float)
+
+class PipelineStatusRecord(Base):
+    __tablename__ = "pipeline_status"
+
+    store_id = Column(String, primary_key=True)
+    camera_id = Column(String, nullable=False)
+    current_frame = Column(Integer, default=0)
+    total_frames = Column(Integer, default=0)
+    percentage = Column(Float, default=0.0)
+    fps = Column(Float, default=0.0)
+    status = Column(String, default="IDLE")
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+class PipelineLogRecord(Base):
+    __tablename__ = "pipeline_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
+    level = Column(String, nullable=False)
+    message = Column(String, nullable=False)

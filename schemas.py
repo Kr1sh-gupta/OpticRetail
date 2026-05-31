@@ -34,3 +34,39 @@ class StoreEvent(BaseModel):
     is_staff: bool = False
     confidence: float
     metadata: EventMetadata = Field(default_factory=EventMetadata)
+
+class PipelineStatusUpdate(BaseModel):
+    store_id: str
+    camera_id: str
+    current_frame: int
+    total_frames: int
+    percentage: float
+    fps: float
+    status: str
+
+class PipelineStatusResponse(BaseModel):
+    store_id: str
+    camera_id: str
+    current_frame: int
+    total_frames: int
+    percentage: float
+    fps: float
+    status: str
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class PipelineLogCreate(BaseModel):
+    timestamp: datetime
+    level: str
+    message: str
+
+class PipelineLogResponse(BaseModel):
+    id: int
+    timestamp: datetime
+    level: str
+    message: str
+
+    class Config:
+        from_attributes = True

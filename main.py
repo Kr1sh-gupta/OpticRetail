@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from sqlalchemy import select, func
 from database import engine, Base, AsyncSessionLocal
-from routers import ingestion, metrics, anomalies
+from routers import ingestion, metrics, anomalies, pipeline
 from datetime import datetime, timezone, timedelta
 import models
 import uvicorn
@@ -66,6 +66,7 @@ async def log_requests(request: Request, call_next):
 app.include_router(ingestion.router)
 app.include_router(metrics.router)
 app.include_router(anomalies.router)
+app.include_router(pipeline.router)
 
 
 @app.on_event("startup")
