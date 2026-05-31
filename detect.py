@@ -20,6 +20,7 @@ import logging
 import urllib.request
 import argparse
 from datetime import datetime, timezone, timedelta
+from typing import Tuple
 from dotenv import load_dotenv
 import time
 import queue
@@ -28,7 +29,7 @@ import requests
 
 import onnxruntime as ort
 
-from tracker import Tracker
+from tracker import Tracker, reset_global_reid_registry
 from emit import EventBuffer, build_event
 
 load_dotenv()
@@ -220,6 +221,25 @@ def is_staff_by_clothing(frame: np.ndarray, bbox) -> bool:
     return is_staff
 
 
+def get_clothing_signature(frame: np.ndarray, bbox) -> Tuple[float, float, float]:
+    """Computes the average HSV signature of the isolated center torso clothing."""
+    x1, y1, x2, y2 = bbox
+    torso_y1 = y1 + int((y2 - y1) * 0.25)
+    torso_y2 = y1 + int((y2 - y1) * 0.75)
+    width = x2 - x1
+    torso_x1 = x1 + int(width * 0.20)
+    torso_x2 = x1 + int(width * 0.80)
+    
+    roi = frame[torso_y1:torso_y2, torso_x1:torso_x2]
+    if roi.size == 0:
+        return (0.0, 0.0, 0.0)
+    
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    # Get mean H, S, V values of the isolated torso clothing region
+    mean_val = cv2.mean(hsv)[:3]
+    return (float(mean_val[0]), float(mean_val[1]), float(mean_val[2]))
+
+
 # ============================================================
 # YOLO Inference
 # ============================================================
@@ -370,23 +390,33 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
             except Exception:
                 pass
 
-        # Compute timestamp from video frame position
+        # Compute timestamp from video frame position matching exact burn-in time on CCTV footage
         elapsed_secs = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
-        # TODO: For live RTSP streams, replace with datetime.now(timezone.utc)
-        base_time = datetime(2026, 4, 10, 14, 0, 0, tzinfo=timezone.utc)
+        cam_start_times = {
+            "CAM1": (20, 10, 29),
+            "CAM2": (20, 10, 3),
+            "CAM3": (20, 10, 3),
+            "CAM4": (20, 9, 45),
+            "CAM5": (20, 9, 48),
+        }
+        start_h, start_m, start_s = cam_start_times.get(cam_key, (20, 10, 0))
+        # Use today's date so dashboard times are fresh, but preserve exact video timing
+        today = datetime.now(timezone.utc).date()
+        base_time = datetime(today.year, today.month, today.day, start_h, start_m, start_s, tzinfo=timezone.utc)
         frame_ts = base_time + timedelta(seconds=elapsed_secs)
 
         # Run YOLO detection
         raw_detections = run_yolo(model, frame)
 
-        # Build structured detections: (bbox, is_staff, confidence)
+        # Build structured detections: (bbox, is_staff, confidence, color_signature)
         structured = []
         for (bbox, confidence) in raw_detections:
             is_staff = is_staff_by_clothing(frame, bbox)
-            structured.append((bbox, is_staff, confidence))
+            color_sig = get_clothing_signature(frame, bbox)
+            structured.append((bbox, is_staff, confidence, color_sig))
 
-        # Update tracker
-        new_events, lost_tracks = tracker.update(structured, frame_ts)
+        # Update tracker with cross-camera Re-ID matching memory
+        new_events, lost_tracks = tracker.update(structured, frame_ts, cam_key)
 
         # --- Emit events for new/re-entered visitors ---
         for track, event_type in new_events:
@@ -544,7 +574,8 @@ if __name__ == "__main__":
     model = load_model()
     buffer = EventBuffer()
 
-    # Wipe old logs at the beginning of the entire pipeline execution run
+    # Wipe old logs and reset Re-ID registry at the beginning of the entire pipeline execution run
+    reset_global_reid_registry()
     try:
         requests.delete(API_LOGS_URL, timeout=2)
     except Exception:

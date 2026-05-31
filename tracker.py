@@ -30,6 +30,7 @@ class Track:
     bbox: Tuple[int, int, int, int]   # x1, y1, x2, y2
     is_staff: bool
     confidence: float
+    color_signature: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     lost_frames: int = 0
     session_seq: int = 0
     zone_id: Optional[str] = None
@@ -55,6 +56,21 @@ def compute_iou(box_a: Tuple, box_b: Tuple) -> float:
     area_b = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
     union_area = area_a + area_b - inter_area
     return inter_area / union_area if union_area > 0 else 0.0
+
+
+# Global Re-ID Registry shared across all camera trackers in the same pipeline run
+# Key: visitor_id (e.g. VIS_CEC909)
+# Value: Dict containing:
+#   - 'color_signature': Tuple[float, float, float] (mean_h, mean_s, mean_v)
+#   - 'last_seen_time': datetime
+#   - 'camera_id': str
+GLOBAL_REID_REGISTRY: Dict[str, dict] = {}
+
+
+def reset_global_reid_registry():
+    """Wipes the global cross-camera registry for a fresh run."""
+    GLOBAL_REID_REGISTRY.clear()
+    logger.info("[TRACKER] Global Cross-Cam Re-ID Registry has been reset.")
 
 
 class Tracker:
@@ -88,11 +104,12 @@ class Tracker:
 
     def update(
         self,
-        detections: List[Tuple[Tuple[int, int, int, int], bool, float]],
-        now: datetime
+        detections: List[Tuple[Tuple[int, int, int, int], bool, float, Tuple[float, float, float]]],
+        now: datetime,
+        camera_id: str = "CAM1"
     ) -> Tuple[List[Tuple[Track, str]], List[Track]]:
         """
-        Matches new detections to existing tracks using IOU.
+        Matches new detections to existing tracks using IOU and cross-camera Re-ID.
 
         Returns:
           - matched: list of (track, event_type) — "ENTRY", "REENTRY", or None (ongoing)
@@ -102,7 +119,7 @@ class Tracker:
         new_events: List[Tuple[Track, str]] = []
 
         # Step 1: Match each detection to an existing active track
-        for (bbox, is_staff, confidence) in detections:
+        for (bbox, is_staff, confidence, color_sig) in detections:
             best_iou = IOU_MATCH_THRESHOLD
             best_id = None
 
@@ -119,9 +136,15 @@ class Tracker:
                 track.last_seen = now
                 track.lost_frames = 0
                 track.confidence = confidence
+                # Smooth/update color signature
+                track.color_signature = (
+                    track.color_signature[0] * 0.8 + color_sig[0] * 0.2,
+                    track.color_signature[1] * 0.8 + color_sig[1] * 0.2,
+                    track.color_signature[2] * 0.8 + color_sig[2] * 0.2,
+                )
                 matched_ids.add(best_id)
             else:
-                # New detection — check for re-entry first
+                # New detection — check for local re-entry first
                 reentry_id = self._find_reentry_match(bbox, now)
                 if reentry_id:
                     old_track = self.exited_tracks.pop(reentry_id)
@@ -135,20 +158,74 @@ class Tracker:
                     new_events.append((old_track, "REENTRY"))
                     logger.info(f"[TRACKER] REENTRY detected for {reentry_id}")
                 else:
-                    # Brand new visitor
-                    vid = self._generate_visitor_id()
-                    new_track = Track(
-                        visitor_id=vid,
-                        bbox=bbox,
-                        is_staff=is_staff,
-                        confidence=confidence,
-                        first_seen=now,
-                        last_seen=now
-                    )
-                    self.active_tracks[vid] = new_track
-                    matched_ids.add(vid)
-                    new_events.append((new_track, "ENTRY"))
-                    logger.debug(f"[TRACKER] New {'STAFF' if is_staff else 'VISITOR'} → {vid}")
+                    # Brand new visitor in this camera — check GLOBAL Re-ID registry first
+                    matched_global_id = None
+                    best_dist = 28.0  # Threshold of 28.0 distance in HSV space
+                    
+                    if not is_staff:  # Visitors get Re-ID'ed, staff are handled by separate metrics
+                        for reg_vid, reg_info in list(GLOBAL_REID_REGISTRY.items()):
+                            # Avoid matching if they are seen on the same camera at the exact same moment (prevents duplicate matching)
+                            time_diff = abs((now - reg_info["last_seen_time"]).total_seconds())
+                            if reg_info["camera_id"] == camera_id and time_diff < 2:
+                                continue
+                            
+                            # Euclidean distance in HSV space
+                            sig_a = color_sig
+                            sig_b = reg_info["color_signature"]
+                            dist = ((sig_a[0] - sig_b[0])**2 + (sig_a[1] - sig_b[1])**2 + (sig_a[2] - sig_b[2])**2)**0.5
+                            
+                            # Limit Re-ID match window to 10 minutes (600 seconds)
+                            if dist < best_dist and time_diff < 600:
+                                best_dist = dist
+                                matched_global_id = reg_vid
+
+                    if matched_global_id:
+                        vid = matched_global_id
+                        logger.info(f"[TRACKER] Global Re-ID matched existing visitor {vid} from {GLOBAL_REID_REGISTRY[vid]['camera_id']} to {camera_id} (HSV dist: {best_dist:.2f})")
+                        
+                        # Create track with the matched global visitor ID
+                        new_track = Track(
+                            visitor_id=vid,
+                            bbox=bbox,
+                            is_staff=is_staff,
+                            confidence=confidence,
+                            color_signature=color_sig,
+                            first_seen=now,
+                            last_seen=now
+                        )
+                        self.active_tracks[vid] = new_track
+                        matched_ids.add(vid)
+                        
+                        # Trigger a REENTRY event globally so the DB registers them returning/transitioning
+                        new_events.append((new_track, "REENTRY"))
+                        
+                        # Update registry
+                        GLOBAL_REID_REGISTRY[vid]["last_seen_time"] = now
+                        GLOBAL_REID_REGISTRY[vid]["camera_id"] = camera_id
+                    else:
+                        # Brand new visitor altogether
+                        vid = self._generate_visitor_id()
+                        new_track = Track(
+                            visitor_id=vid,
+                            bbox=bbox,
+                            is_staff=is_staff,
+                            confidence=confidence,
+                            color_signature=color_sig,
+                            first_seen=now,
+                            last_seen=now
+                        )
+                        self.active_tracks[vid] = new_track
+                        matched_ids.add(vid)
+                        new_events.append((new_track, "ENTRY"))
+                        logger.debug(f"[TRACKER] New {'STAFF' if is_staff else 'VISITOR'} → {vid}")
+                        
+                        # Register in Global Cross-Cam Re-ID Registry
+                        if not is_staff:
+                            GLOBAL_REID_REGISTRY[vid] = {
+                                "color_signature": color_sig,
+                                "last_seen_time": now,
+                                "camera_id": camera_id
+                            }
 
         # Step 2: Increment lost_frames for unmatched tracks
         lost_tracks = []
