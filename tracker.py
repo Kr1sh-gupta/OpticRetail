@@ -73,11 +73,19 @@ def compute_iou(box_a: Tuple, box_b: Tuple) -> float:
 GLOBAL_REID_REGISTRY: Dict[str, dict] = {}
 GLOBAL_REID_LOCK = threading.Lock()
 
+# Staff registry: set of unique visitor_ids confirmed as staff at the ENTRY camera (CAM3).
+# Interior cameras never add to this set — prevents false staff from crowded scenes.
+GLOBAL_STAFF_REGISTRY: set = set()
+GLOBAL_STAFF_LOCK = threading.Lock()
+
 
 def reset_global_reid_registry():
-    """Wipes the global cross-camera registry for a fresh run."""
+    """Wipes the global cross-camera registry and staff registry for a fresh run."""
+    global GLOBAL_STAFF_REGISTRY
     with GLOBAL_REID_LOCK:
         GLOBAL_REID_REGISTRY.clear()
+    with GLOBAL_STAFF_LOCK:
+        GLOBAL_STAFF_REGISTRY.clear()
     logger.info("[TRACKER] Global Cross-Cam Re-ID Registry has been reset.")
 
 
@@ -114,7 +122,8 @@ class Tracker:
         self,
         detections: List[Tuple[Tuple[int, int, int, int], bool, float, Tuple[float, float, float], Tuple[float, float, float], str]],
         now: datetime,
-        camera_id: str = "CAM1"
+        camera_id: str = "CAM1",
+        camera_role: str = "INTERIOR"
     ) -> Tuple[List[Tuple[Track, str]], List[Track]]:
         """
         Matches new detections to existing tracks using IOU and cross-camera Re-ID.
@@ -260,7 +269,15 @@ class Tracker:
                             GLOBAL_REID_REGISTRY[vid]["last_seen_time"] = now
                             GLOBAL_REID_REGISTRY[vid]["camera_id"] = camera_id
                     else:
-                        # Brand new visitor altogether
+                        # Brand new person — only create new IDs at the ENTRY camera (CAM3).
+                        # Interior/billing cameras see people who were ALREADY inside the store.
+                        # Creating new IDs from crowded interior frames is the root cause of
+                        # inflated visitor/staff counts.
+                        if camera_role != "ENTRY":
+                            # Unknown person in interior/billing camera → skip.
+                            # Either staff (handled by ENTRY camera) or visitor not yet seen at entrance.
+                            continue
+
                         vid = self._generate_visitor_id()
                         new_track = Track(
                             visitor_id=vid,
@@ -278,7 +295,7 @@ class Tracker:
                         )
                         self.active_tracks[vid] = new_track
                         matched_ids.add(vid)
-                        logger.info(f"[TRACKER] Tracking brand new {'STAFF' if is_staff else 'VISITOR'} → {vid} with traits ({traits}) (awaiting confirmation)")
+                        logger.info(f"[TRACKER] [{camera_id}/ENTRY] Tracking brand new {'STAFF' if is_staff else 'VISITOR'} → {vid} with traits ({traits}) (awaiting confirmation)")
                         
 
 

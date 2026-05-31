@@ -161,7 +161,20 @@ CAMERAS = {
     },
 }
 
+# Camera roles drive who can create new visitor IDs.
+# ENTRY    → CAM3: sole source of truth for new visitors/staff entering store
+# INTERIOR → CAM1, CAM2: Re-ID existing visitors inside (no new IDs)
+# BILLING  → CAM5: billing queue — Re-ID only
+CAMERA_ROLES = {
+    "CAM1": "INTERIOR",
+    "CAM2": "INTERIOR",
+    "CAM3": "ENTRY",
+    "CAM4": "STORAGE",
+    "CAM5": "BILLING",
+}
+
 YOLO_MODEL_PATH = "yolov8n.onnx"
+
 
 # ============================================================
 # Model Loading
@@ -531,7 +544,8 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
             structured.append((bbox, is_staff, confidence, shirt_color, pants_color, traits))
 
         # Update tracker with cross-camera Re-ID matching memory
-        new_events, lost_tracks = tracker.update(structured, frame_ts, cam_key)
+        cam_role = CAMERA_ROLES.get(cam_key, "INTERIOR")
+        new_events, lost_tracks = tracker.update(structured, frame_ts, cam_key, cam_role)
 
         # --- Emit events for new/re-entered visitors ---
         for track, event_type in new_events:
