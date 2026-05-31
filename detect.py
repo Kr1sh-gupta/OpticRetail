@@ -516,6 +516,12 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
                 continue
             if cam_key == "CAM2" and y2b < 400:
                 continue
+            
+            # Spatial filter for CAM3 (ignore street traffic on the sidewalk outside, X > 1150)
+            if cam_key == "CAM3":
+                cx = (x1b + x2b) / 2.0
+                if cx > 1150:
+                    continue
                 
             shirt_color, pants_color, traits = get_clothing_signatures(frame, bbox)
             # --- Staff Classification: Per-zone pixel-ratio black detection ---
