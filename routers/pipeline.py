@@ -93,3 +93,60 @@ async def clear_pipeline_logs(db: AsyncSession = Depends(get_db)):
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     return {"status": "success"}
+
+import subprocess
+import os
+
+# Thread-safe global process reference
+PIPELINE_PROC = None
+
+@router.post("/start")
+async def start_pipeline(db: AsyncSession = Depends(get_db)):
+    global PIPELINE_PROC
+    # If the process exists and is still running, return success status
+    if PIPELINE_PROC is not None and PIPELINE_PROC.poll() is None:
+        return {"status": "success", "message": "Pipeline already running"}
+
+    # Clear logs and events for a fresh run
+    try:
+        await db.execute(delete(models.PipelineLogRecord))
+        await db.execute(delete(models.EventRecord))
+        await db.execute(delete(models.PipelineStatusRecord))
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+
+    # Determine paths cleanly
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    pipeline_dir = os.path.abspath(os.path.join(current_dir, "..", "..", "pipeline"))
+    venv_python = os.path.join(pipeline_dir, "venv", "Scripts", "python.exe")
+    detect_script = os.path.join(pipeline_dir, "detect.py")
+
+    try:
+        # Launch non-blocking background subprocess
+        PIPELINE_PROC = subprocess.Popen(
+            [venv_python, detect_script],
+            cwd=pipeline_dir,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start pipeline: {str(e)}")
+
+    return {"status": "success", "message": "Pipeline started successfully", "pid": PIPELINE_PROC.pid}
+
+@router.post("/stop")
+async def stop_pipeline():
+    global PIPELINE_PROC
+    if PIPELINE_PROC is None or PIPELINE_PROC.poll() is not None:
+        return {"status": "success", "message": "Pipeline is not running"}
+
+    try:
+        # Cleanly terminate process tree on Windows using taskkill
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(PIPELINE_PROC.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        PIPELINE_PROC = None
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to stop pipeline: {str(e)}")
+
+    return {"status": "success", "message": "Pipeline stopped successfully"}
+
