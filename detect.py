@@ -191,21 +191,33 @@ def load_model() -> ort.InferenceSession:
 def is_staff_by_clothing(frame: np.ndarray, bbox) -> bool:
     """
     Classifies a detected person as staff if their clothing is predominantly black.
-    Uses HSV color space — black pixels have low Value (V) regardless of Hue.
+    Uses HSV color space — black pixels have low Saturation (S) and low-to-medium Value (V).
     """
     x1, y1, x2, y2 = bbox
     # Analyse the torso region (middle 50% of bounding box height)
     torso_y1 = y1 + int((y2 - y1) * 0.25)
     torso_y2 = y1 + int((y2 - y1) * 0.75)
-    roi = frame[torso_y1:torso_y2, x1:x2]
+    
+    # Exclude left and right 20% background margins to analyze pure clothing pixels
+    width = x2 - x1
+    torso_x1 = x1 + int(width * 0.20)
+    torso_x2 = x1 + int(width * 0.80)
+    
+    roi = frame[torso_y1:torso_y2, torso_x1:torso_x2]
     if roi.size == 0:
         return False
 
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    # Black: low saturation AND low value
-    mask = cv2.inRange(hsv, np.array([0, 0, 0]), np.array([180, 80, 60]))
+    # Black clothing: saturation <= 90 and value <= 95 to accommodate store spotlights
+    lower_black = np.array([0, 0, 0])
+    upper_black = np.array([180, 90, 95])
+    
+    mask = cv2.inRange(hsv, lower_black, upper_black)
     black_ratio = np.sum(mask > 0) / mask.size
-    return bool(black_ratio > 0.50)  # More than 50% black pixels = staff
+    
+    # Expecting > 40% black pixels inside isolated center region for staff classification
+    is_staff = bool(black_ratio > 0.40)
+    return is_staff
 
 
 # ============================================================
