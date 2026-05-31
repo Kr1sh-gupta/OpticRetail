@@ -1,21 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Users, ShoppingCart, Activity, AlertCircle, TrendingUp, TrendingDown, Terminal } from 'lucide-react';
+import { Users, ShoppingCart, Activity, AlertCircle, TrendingUp, TrendingDown, Terminal, Shield } from 'lucide-react';
 
 export function OverviewTab() {
   const [metrics, setMetrics] = useState({
-    unique_visitors: 0, conversion_rate: 0, queue_depth: 0, abandonment_rate: 0
+    unique_visitors: 0, conversion_rate: 0, queue_depth: 0, abandonment_rate: 0, total_staff: 0
   });
 
   const [funnelStages, setFunnelStages] = useState<any[]>([]);
   const [pipelineLogs, setPipelineLogs] = useState<any[]>([]);
 
-  const [events] = useState([
-    { id: 1, type: "ZONE_ENTER", zone: "SKINCARE", time: "Just now" },
-    { id: 2, type: "ENTRY", zone: "MAIN_DOOR", time: "2 min ago" },
-    { id: 3, type: "BILLING_QUEUE_JOIN", zone: "CHECKOUT", time: "5 min ago" },
-    { id: 4, type: "ZONE_DWELL", zone: "FRAGRANCE", time: "8 min ago" },
-    { id: 5, type: "ZONE_ENTER", zone: "MAKEUP", time: "12 min ago" },
-    { id: 6, type: "STAFF_INTERACTION", zone: "FRAGRANCE", time: "15 min ago" },
+  const [events, setEvents] = useState<any[]>([
+    { id: "MOCK1", type: "ZONE_ENTER", zone: "SKINCARE", time: "20:10:29", is_staff: false },
+    { id: "MOCK2", type: "ENTRY", zone: "MAIN_DOOR", time: "20:10:03", is_staff: false },
+    { id: "MOCK3", type: "BILLING_QUEUE_JOIN", zone: "CHECKOUT", time: "20:09:48", is_staff: false },
   ]);
 
   const getLogColor = (message: string, level: string) => {
@@ -61,7 +58,19 @@ export function OverviewTab() {
         .catch(() => { });
     };
 
+    const fetchEvents = () => {
+      fetch('http://localhost:8000/events/recent')
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0) {
+            setEvents(data);
+          }
+        })
+        .catch(() => { });
+    };
+
     fetchLogs();
+    fetchEvents();
 
     // Set up polling every 5 seconds for live feel
     const interval = setInterval(() => {
@@ -71,6 +80,7 @@ export function OverviewTab() {
         .catch(() => { });
 
       fetchLogs();
+      fetchEvents();
     }, 5000);
 
     return () => clearInterval(interval);
@@ -78,25 +88,32 @@ export function OverviewTab() {
 
   return (
     <div className="content-grid">
-      <div className="card" style={{ gridColumn: 'span 3' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Total Visitors</span><Users size={20} color="var(--text-secondary)" /></div>
-        <div className="metric-value">{metrics.unique_visitors}</div>
-        <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> Live</div>
-      </div>
-      <div className="card" style={{ gridColumn: 'span 3' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Conversion Rate</span><ShoppingCart size={20} color="var(--text-secondary)" /></div>
-        <div className="metric-value">{(metrics.conversion_rate * 100).toFixed(1)}%</div>
-        <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> Live</div>
-      </div>
-      <div className="card" style={{ gridColumn: 'span 3' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Billing Queue</span><Activity size={20} color="var(--text-secondary)" /></div>
-        <div className="metric-value">{metrics.queue_depth} <span style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>people</span></div>
-        <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> Live</div>
-      </div>
-      <div className="card" style={{ gridColumn: 'span 3' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Abandonment Rate</span><AlertCircle size={20} color="var(--text-secondary)" /></div>
-        <div className="metric-value">{(metrics.abandonment_rate * 100).toFixed(1)}%</div>
-        <div className="trend-down" style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}><TrendingDown size={16} /> Live</div>
+      <div style={{ gridColumn: 'span 12', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
+        <div className="card" style={{ padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Total Visitors</span><Users size={20} color="var(--text-secondary)" /></div>
+          <div className="metric-value">{metrics.unique_visitors}</div>
+          <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> Live</div>
+        </div>
+        <div className="card" style={{ padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Conversion Rate</span><ShoppingCart size={20} color="var(--text-secondary)" /></div>
+          <div className="metric-value">{(metrics.conversion_rate * 100).toFixed(1)}%</div>
+          <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> Live</div>
+        </div>
+        <div className="card" style={{ padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Total Staff</span><Shield size={20} color="var(--accent)" /></div>
+          <div className="metric-value">{metrics.total_staff}</div>
+          <div className="trend-up" style={{ marginTop: '0.5rem', color: 'var(--accent)' }}><TrendingUp size={16} /> Live</div>
+        </div>
+        <div className="card" style={{ padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Billing Queue</span><Activity size={20} color="var(--text-secondary)" /></div>
+          <div className="metric-value">{metrics.queue_depth} <span style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>people</span></div>
+          <div className="trend-up" style={{ marginTop: '0.5rem' }}><TrendingUp size={16} /> Live</div>
+        </div>
+        <div className="card" style={{ padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Abandonment Rate</span><AlertCircle size={20} color="var(--text-secondary)" /></div>
+          <div className="metric-value">{(metrics.abandonment_rate * 100).toFixed(1)}%</div>
+          <div className="trend-down" style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}><TrendingDown size={16} /> Live</div>
+        </div>
       </div>
 
       <div className="card" style={{ gridColumn: 'span 8', minHeight: '350px' }}>
@@ -118,17 +135,34 @@ export function OverviewTab() {
       <div className="card" style={{ gridColumn: 'span 4', gridRow: 'span 2', display: 'flex', flexDirection: 'column', minHeight: '725px' }}>
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.5rem' }}>Recent Events</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', flex: 1 }}>
-          {events.map((event: any) => (
-            <div key={event.id} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)' }}>
-              <div style={{ background: 'var(--bg-color)', padding: '0.5rem', borderRadius: '8px' }}>
-                <Activity size={16} color="var(--accent)" />
+          {events.map((event: any) => {
+            const getEventIconAndColor = (type: string, isStaff: boolean) => {
+              if (isStaff) {
+                return { icon: <Shield size={16} color="var(--accent)" />, label: "STAFF_INTERACTION" };
+              }
+              if (type.includes("QUEUE")) {
+                return { icon: <Activity size={16} color="var(--warning)" />, label: type };
+              }
+              if (type.includes("ENTRY") || type.includes("EXIT") || type.includes("REENTRY")) {
+                return { icon: <Users size={16} color="var(--success)" />, label: type };
+              }
+              return { icon: <ShoppingCart size={16} color="var(--text-secondary)" />, label: type };
+            };
+
+            const { icon, label } = getEventIconAndColor(event.type, event.is_staff);
+
+            return (
+              <div key={event.id} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
+                <div style={{ background: 'var(--bg-color)', padding: '0.5rem', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {icon}
+                </div>
+                <div>
+                  <p style={{ margin: 0, fontWeight: 500, fontSize: '0.825rem' }}>{label}</p>
+                  <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.725rem', marginTop: '0.25rem' }}>{event.zone} • {event.time}</p>
+                </div>
               </div>
-              <div>
-                <p style={{ margin: 0, fontWeight: 500, fontSize: '0.875rem' }}>{event.type}</p>
-                <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '0.25rem' }}>{event.zone} • {event.time}</p>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         
         <button 
