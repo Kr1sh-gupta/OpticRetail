@@ -1,3 +1,1 @@
-pytest
-pytest-asyncio
-httpx
+# Package initialization for pytest

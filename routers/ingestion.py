@@ -43,6 +43,22 @@ async def ingest_events(events: List[schemas.StoreEvent], db: AsyncSession = Dep
     return {"status": "success", "inserted": len(events)}
 
 
+from sqlalchemy import select, text
+
+@router.post("/clear")
+async def clear_events(db: AsyncSession = Depends(get_db)):
+    """Truncates events, pipeline_logs, and resets pipeline_status for a clean state."""
+    try:
+        await db.execute(text("TRUNCATE TABLE events, pipeline_logs RESTART IDENTITY CASCADE;"))
+        await db.execute(text("UPDATE pipeline_status SET current_frame=0, percentage=0.0, status='IDLE', fps=0.0;"))
+        await db.commit()
+        return {"status": "success", "message": "Database cleared successfully."}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database clear error: {str(e)}")
+
+
+
 from sqlalchemy import select
 
 @router.get("/recent")

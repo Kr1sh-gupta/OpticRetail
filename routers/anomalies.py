@@ -155,6 +155,59 @@ async def get_anomalies(store_id: str, db: AsyncSession = Depends(get_db)):
             "suggested_action": "Check POS terminal connectivity. Verify transaction data is syncing correctly."
         })
 
+    # ----------------------------------------------------------------
+    # RULE 5: UNAUTHORIZED_STORAGE_ENTRY
+    # Trigger: Any ZONE_ENTER event with zone_id == "STORAGE" and is_staff == False in the last 15 min
+    # ----------------------------------------------------------------
+    fifteen_min_ago = now - timedelta(minutes=15)
+    unauthorized_q = select(models.EventRecord.visitor_id, models.EventRecord.timestamp).where(
+        and_(
+            models.EventRecord.store_id == store_id,
+            models.EventRecord.event_type == "ZONE_ENTER",
+            models.EventRecord.zone_id == "STORAGE",
+            models.EventRecord.is_staff == False,
+            models.EventRecord.timestamp >= fifteen_min_ago
+        )
+    ).limit(5)
+    unauthorized_res = await db.execute(unauthorized_q)
+    unauthorized_entries = unauthorized_res.all()
+
+    for entry in unauthorized_entries:
+        anomalies.append({
+            "id": f"ANOM_STORAGE_{entry.visitor_id}",
+            "type": "CRITICAL",
+            "title": "Unauthorized Storage Room Entry",
+            "zone": "STORAGE",
+            "time": "Recent",
+            "description": f"Non-staff visitor {entry.visitor_id} detected inside secure inventory storage room.",
+            "suggested_action": "Security associate should immediately inspect storage room and escort visitor out."
+        })
+
+    # ----------------------------------------------------------------
+    # RULE 6: SUSPICIOUS_CONCEALMENT_THEFT
+    # Trigger: Any SUSPICIOUS_BEHAVIOR event in the last 15 minutes
+    # ----------------------------------------------------------------
+    suspicious_q = select(models.EventRecord.visitor_id, models.EventRecord.timestamp).where(
+        and_(
+            models.EventRecord.store_id == store_id,
+            models.EventRecord.event_type == "SUSPICIOUS_BEHAVIOR",
+            models.EventRecord.timestamp >= fifteen_min_ago
+        )
+    ).limit(5)
+    suspicious_res = await db.execute(suspicious_q)
+    suspicious_events = suspicious_res.all()
+
+    for event in suspicious_events:
+        anomalies.append({
+            "id": f"ANOM_THEFT_{event.visitor_id}",
+            "type": "CRITICAL",
+            "title": "Suspicious Obscuration / Shoplifting Alert",
+            "zone": "STORAGE",
+            "time": "Recent",
+            "description": f"YOLO Confidence Drop Obscuration heuristic triggered for visitor {event.visitor_id} in secure storage.",
+            "suggested_action": "Review Aisle 3 / Storage Room CCTV playback. Verify if item was concealed in clothing."
+        })
+
     if not anomalies:
         anomalies.append({
             "id": "ANOM_CLEAR",

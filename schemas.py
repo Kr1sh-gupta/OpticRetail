@@ -70,3 +70,9 @@ class PipelineLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class PosTransactionCreate(BaseModel):
+    transaction_id: str
+    timestamp: datetime
+    basket_value_inr: float
+
