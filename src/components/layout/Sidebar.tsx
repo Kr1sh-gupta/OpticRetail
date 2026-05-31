@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, ShoppingCart, Activity, AlertCircle, Video, Settings, Terminal } from 'lucide-react';
+import { LayoutDashboard, Users, ShoppingCart, Activity, AlertCircle, Video, Settings, Terminal, CreditCard } from 'lucide-react';
 
 export function Sidebar({ activeTab, setActiveTab }: any) {
   return (
@@ -17,6 +17,7 @@ export function Sidebar({ activeTab, setActiveTab }: any) {
         <NavItem icon={<ShoppingCart size={18} />} label="Conversions" active={activeTab === 'conversions'} onClick={() => setActiveTab('conversions')} />
         <NavItem icon={<AlertCircle size={18} />} label="Anomalies" active={activeTab === 'anomalies'} onClick={() => setActiveTab('anomalies')} />
         <NavItem icon={<Terminal size={18} />} label="Console & Logs" active={activeTab === 'console'} onClick={() => setActiveTab('console')} />
+        <NavItem icon={<CreditCard size={18} />} label="POS System" active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} />
       </nav>
 
       <div style={{ marginTop: 'auto' }}>

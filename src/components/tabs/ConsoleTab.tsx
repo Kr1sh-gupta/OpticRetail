@@ -99,6 +99,23 @@ export function ConsoleTab() {
       .catch(console.error);
   };
 
+  const handleResetDatabase = () => {
+    if (window.confirm("Are you sure you want to completely reset and clear the store database events? This will reset all charts and statistics to 0.")) {
+      fetch('http://localhost:8000/events/clear', { method: 'POST' })
+        .then(res => res.json())
+        .then(() => {
+          setLogs([]);
+          fetchStatusAndLogs();
+          alert("Store database reset successfully! All statistics are now reset to 0.");
+        })
+        .catch(err => {
+          console.error(err);
+          alert("Failed to reset database: " + err.message);
+        });
+    }
+  };
+
+
   const getLogColor = (message: string, level: string) => {
     if (level === 'ERROR' || message.includes('| ERROR |')) return '#ff5252';
     if (level === 'WARNING' || message.includes('| WARNING |')) return '#ffd740';
@@ -188,6 +205,35 @@ export function ConsoleTab() {
             <span style={{ width: '6px', height: '6px', background: 'currentColor', borderRadius: '1px' }} />
             Stop Run
           </button>
+
+          {/* Reset Database Button */}
+          <button
+            onClick={handleResetDatabase}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              background: 'rgba(255, 82, 82, 0.1)',
+              border: '1px solid rgba(255, 82, 82, 0.3)',
+              color: '#ff5252',
+              padding: '0.4rem 0.9rem',
+              borderRadius: '20px',
+              fontWeight: 600,
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 82, 82, 0.2)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 82, 82, 0.1)';
+            }}
+          >
+            <Trash2 size={12} />
+            Reset Database
+          </button>
+
 
           <div style={{
             display: 'flex',

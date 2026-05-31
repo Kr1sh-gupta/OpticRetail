@@ -9,6 +9,8 @@ import { AudienceTab } from './components/tabs/AudienceTab';
 import { ConversionsTab } from './components/tabs/ConversionsTab';
 import { AnomaliesTab } from './components/tabs/AnomaliesTab';
 import { ConsoleTab } from './components/tabs/ConsoleTab';
+import { POSTab } from './components/tabs/POSTab';
+
 
 function App() {
   const [activeTab, setActiveTab] = useState(() => {
@@ -40,6 +42,7 @@ function App() {
         {activeTab === 'conversions' && <ConversionsTab />}
         {activeTab === 'anomalies' && <AnomaliesTab />}
         {activeTab === 'console' && <ConsoleTab />}
+        {activeTab === 'pos' && <POSTab />}
       </main>
     </div>
   );
