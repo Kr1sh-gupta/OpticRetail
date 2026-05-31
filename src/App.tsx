@@ -8,6 +8,7 @@ import { LiveFeedsTab } from './components/tabs/LiveFeedsTab';
 import { AudienceTab } from './components/tabs/AudienceTab';
 import { ConversionsTab } from './components/tabs/ConversionsTab';
 import { AnomaliesTab } from './components/tabs/AnomaliesTab';
+import { ConsoleTab } from './components/tabs/ConsoleTab';
 
 function App() {
   const [activeTab, setActiveTab] = useState(() => {
@@ -38,6 +39,7 @@ function App() {
         {activeTab === 'audience' && <AudienceTab />}
         {activeTab === 'conversions' && <ConversionsTab />}
         {activeTab === 'anomalies' && <AnomaliesTab />}
+        {activeTab === 'console' && <ConsoleTab />}
       </main>
     </div>
   );
