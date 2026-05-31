@@ -247,16 +247,14 @@ def get_color_name(hsv: Tuple[float, float, float]) -> str:
     # --- Neutral zone check ---
     # True black/gray/white: LOW saturation AND no dominant chromatic hue
     if s < 30:
-        # Even with low S, if Value is in medium range and hue falls in
-        # a chromatic band, we call it a "dark <color>" not "black/gray".
-        # This handles dark purple/maroon/navy under CCTV compression.
-        if v < 45:
+        # Black fabric under store/entrance lighting: S stays low but V can reach 130-140.
+        # White fabric: V > 200. Dark-chromatic (dark purple, dark navy): has slight S>=12 hint.
+        if v < 85:
             return "black"
-        elif v > 190:
+        elif v > 200:
             return "white"
-        elif v < 120 and s >= 12:
-            # Dark but has a hint of color — classify by Hue
-            # This catches dark purple (H~270-300), dark navy (H~220-260) etc.
+        elif v < 145 and s >= 12:
+            # Dark with a chromatic hue hint — classify by Hue
             if 200 <= hue_deg < 270:
                 return "dark blue"
             elif 270 <= hue_deg < 315:
@@ -264,7 +262,7 @@ def get_color_name(hsv: Tuple[float, float, float]) -> str:
             elif hue_deg < 20 or hue_deg >= 315:
                 return "dark red"
             else:
-                return "gray"
+                return "black"  # No strong hue — treat as black (store-lit staff uniform)
         else:
             return "gray"
 
@@ -531,16 +529,22 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
             pants_roi_b = frame[pz_y1:pz_y2, mx1:mx2]
 
             def _black_ratio(roi):
+                """Fraction of pixels that are achromatic and dark (black/dark-gray under any lighting).
+                V<=140 captures black fabric even under bright entrance daylight (ambient light
+                raises black fabric from V=20 to V=100-130 without changing Saturation).
+                """
                 if roi.size == 0:
                     return 0.0
                 h = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-                mask = cv2.inRange(h, np.array([0, 0, 0]), np.array([180, 30, 80]))
+                # Low saturation (S<=35) = achromatic = black/gray/white
+                # V<=140 = not white (white has V>200) but includes store-lit black fabric
+                mask = cv2.inRange(h, np.array([0, 0, 0]), np.array([180, 35, 140]))
                 return np.sum(mask > 0) / mask.size
 
             shirt_black = _black_ratio(shirt_roi_b)
             pants_black = _black_ratio(pants_roi_b)
-            # Both zones must have > 35% true-black pixels
-            is_staff = bool(shirt_black > 0.35 and pants_black > 0.35)
+            # Both zones must have > 28% achromatic dark pixels — staff wear full-black uniform
+            is_staff = bool(shirt_black > 0.28 and pants_black > 0.28)
             structured.append((bbox, is_staff, confidence, shirt_color, pants_color, traits))
 
         # Update tracker with cross-camera Re-ID matching memory
