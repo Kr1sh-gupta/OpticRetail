@@ -79,6 +79,26 @@ export function ConsoleTab() {
       .catch(console.error);
   };
 
+  const handleStartPipeline = () => {
+    fetch('http://localhost:8000/pipeline/logs', { method: 'DELETE' })
+      .then(() => setLogs([]))
+      .then(() => fetch('http://localhost:8000/pipeline/start', { method: 'POST' }))
+      .then(res => res.json())
+      .then(() => {
+        fetchStatusAndLogs();
+      })
+      .catch(console.error);
+  };
+
+  const handleStopPipeline = () => {
+    fetch('http://localhost:8000/pipeline/stop', { method: 'POST' })
+      .then(res => res.json())
+      .then(() => {
+        fetchStatusAndLogs();
+      })
+      .catch(console.error);
+  };
+
   const getLogColor = (message: string, level: string) => {
     if (level === 'ERROR' || message.includes('| ERROR |')) return '#ff5252';
     if (level === 'WARNING' || message.includes('| WARNING |')) return '#ffd740';
@@ -119,16 +139,64 @@ export function ConsoleTab() {
           </div>
         </div>
 
-        {/* Live Status Badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {/* Live Status Badge & Pipeline Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {/* Start Button */}
+          <button
+            onClick={handleStartPipeline}
+            disabled={!isOffline && activeStatus === 'PROCESSING'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              background: (!isOffline && activeStatus === 'PROCESSING') ? 'rgba(76, 175, 80, 0.05)' : 'var(--accent)',
+              border: (!isOffline && activeStatus === 'PROCESSING') ? '1px solid rgba(76, 175, 80, 0.1)' : '1px solid var(--accent)',
+              color: (!isOffline && activeStatus === 'PROCESSING') ? '#71717a' : '#ffffff',
+              padding: '0.4rem 0.9rem',
+              borderRadius: '20px',
+              fontWeight: 600,
+              fontSize: '0.8rem',
+              cursor: (!isOffline && activeStatus === 'PROCESSING') ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s',
+              opacity: (!isOffline && activeStatus === 'PROCESSING') ? 0.5 : 1
+            }}
+          >
+            <Play size={12} fill="currentColor" />
+            Start Run
+          </button>
+
+          {/* Stop Button */}
+          <button
+            onClick={handleStopPipeline}
+            disabled={isOffline || activeStatus !== 'PROCESSING'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              background: (isOffline || activeStatus !== 'PROCESSING') ? 'rgba(255, 82, 82, 0.05)' : '#ff5252',
+              border: (isOffline || activeStatus !== 'PROCESSING') ? '1px solid rgba(255, 82, 82, 0.1)' : '1px solid #ff5252',
+              color: (isOffline || activeStatus !== 'PROCESSING') ? '#71717a' : '#ffffff',
+              padding: '0.4rem 0.9rem',
+              borderRadius: '20px',
+              fontWeight: 600,
+              fontSize: '0.8rem',
+              cursor: (isOffline || activeStatus !== 'PROCESSING') ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s',
+              opacity: (isOffline || activeStatus !== 'PROCESSING') ? 0.5 : 1
+            }}
+          >
+            <span style={{ width: '6px', height: '6px', background: 'currentColor', borderRadius: '1px' }} />
+            Stop Run
+          </button>
+
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '0.5rem',
-            padding: '0.5rem 1rem',
+            padding: '0.4rem 0.9rem',
             borderRadius: '20px',
             fontWeight: 600,
-            fontSize: '0.85rem',
+            fontSize: '0.8rem',
             background: activeStatus === 'PROCESSING' 
               ? 'rgba(255, 179, 0, 0.15)' 
               : activeStatus === 'OFFLINE' 
