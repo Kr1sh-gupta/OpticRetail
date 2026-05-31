@@ -209,15 +209,15 @@ def is_staff_by_clothing(frame: np.ndarray, bbox) -> bool:
         return False
 
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    # Black clothing: saturation <= 68 and value <= 80 to exclude dark colorful attire while allowing store spotlights
+    # Black clothing: saturation <= 25 and value <= 68 to exclude colorful dark clothes (like dark purple) while allowing store spotlights
     lower_black = np.array([0, 0, 0])
-    upper_black = np.array([180, 68, 80])
+    upper_black = np.array([180, 25, 68])
     
     mask = cv2.inRange(hsv, lower_black, upper_black)
     black_ratio = np.sum(mask > 0) / mask.size
     
-    # Expecting > 40% black pixels inside isolated center region for staff classification
-    is_staff = bool(black_ratio > 0.40)
+    # Expecting > 45% black pixels inside isolated center region for staff classification
+    is_staff = bool(black_ratio > 0.45)
     return is_staff
 
 
