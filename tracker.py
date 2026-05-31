@@ -31,6 +31,9 @@ class Track:
     is_staff: bool
     confidence: float
     color_signature: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    staff_votes: int = 0
+    total_votes: int = 0
+    emitted_entry: bool = False
     lost_frames: int = 0
     session_seq: int = 0
     zone_id: Optional[str] = None
@@ -110,6 +113,7 @@ class Tracker:
     ) -> Tuple[List[Tuple[Track, str]], List[Track]]:
         """
         Matches new detections to existing tracks using IOU and cross-camera Re-ID.
+        Accrues staff classification votes and confirms tracks after 5 active frames to eliminate noise.
 
         Returns:
           - matched: list of (track, event_type) — "ENTRY", "REENTRY", or None (ongoing)
@@ -136,6 +140,12 @@ class Tracker:
                 track.last_seen = now
                 track.lost_frames = 0
                 track.confidence = confidence
+                
+                # Accumulate staff votes and re-evaluate classification dynamically
+                track.total_votes += 1
+                track.staff_votes += 1 if is_staff else 0
+                track.is_staff = (track.staff_votes / track.total_votes) > 0.5
+
                 # Smooth/update color signature
                 track.color_signature = (
                     track.color_signature[0] * 0.8 + color_sig[0] * 0.2,
@@ -143,6 +153,13 @@ class Tracker:
                     track.color_signature[2] * 0.8 + color_sig[2] * 0.2,
                 )
                 matched_ids.add(best_id)
+
+                # Confirm and emit entry events only after 5 frames of stable tracking
+                if track.total_votes >= 5 and not track.emitted_entry:
+                    track.emitted_entry = True
+                    # If this is a globally Re-ID'ed visitor, it registers as REENTRY, else ENTRY
+                    event_type = "REENTRY" if track.session_seq > 0 or track.visitor_id in GLOBAL_REID_REGISTRY else "ENTRY"
+                    new_events.append((track, event_type))
             else:
                 # New detection — check for local re-entry first
                 reentry_id = self._find_reentry_match(bbox, now)
@@ -153,10 +170,11 @@ class Tracker:
                     old_track.exit_time = None
                     old_track.last_seen = now
                     old_track.session_seq += 1
+                    old_track.emitted_entry = True  # Already verified and emitted before
                     self.active_tracks[reentry_id] = old_track
                     matched_ids.add(reentry_id)
                     new_events.append((old_track, "REENTRY"))
-                    logger.info(f"[TRACKER] REENTRY detected for {reentry_id}")
+                    logger.info(f"[TRACKER] Local REENTRY detected for {reentry_id}")
                 else:
                     # Brand new visitor in this camera — check GLOBAL Re-ID registry first
                     matched_global_id = None
@@ -188,16 +206,16 @@ class Tracker:
                             visitor_id=vid,
                             bbox=bbox,
                             is_staff=is_staff,
+                            staff_votes=1 if is_staff else 0,
+                            total_votes=1,
                             confidence=confidence,
                             color_signature=color_sig,
                             first_seen=now,
-                            last_seen=now
+                            last_seen=now,
+                            emitted_entry=False
                         )
                         self.active_tracks[vid] = new_track
                         matched_ids.add(vid)
-                        
-                        # Trigger a REENTRY event globally so the DB registers them returning/transitioning
-                        new_events.append((new_track, "REENTRY"))
                         
                         # Update registry
                         GLOBAL_REID_REGISTRY[vid]["last_seen_time"] = now
@@ -209,15 +227,17 @@ class Tracker:
                             visitor_id=vid,
                             bbox=bbox,
                             is_staff=is_staff,
+                            staff_votes=1 if is_staff else 0,
+                            total_votes=1,
                             confidence=confidence,
                             color_signature=color_sig,
                             first_seen=now,
-                            last_seen=now
+                            last_seen=now,
+                            emitted_entry=False
                         )
                         self.active_tracks[vid] = new_track
                         matched_ids.add(vid)
-                        new_events.append((new_track, "ENTRY"))
-                        logger.debug(f"[TRACKER] New {'STAFF' if is_staff else 'VISITOR'} → {vid}")
+                        logger.debug(f"[TRACKER] Tracking brand new {'STAFF' if is_staff else 'VISITOR'} → {vid} (awaiting confirmation)")
                         
                         # Register in Global Cross-Cam Re-ID Registry
                         if not is_staff:
