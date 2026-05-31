@@ -63,12 +63,24 @@ async def get_metrics(store_id: str, db: AsyncSession = Depends(get_db)):
 
     abandon_rate = (queue_abandons / queue_joins) if queue_joins > 0 else 0
 
+    # 5. Total staff (is_staff = True)
+    staff_query = select(func.count(func.distinct(models.EventRecord.visitor_id))).where(
+        and_(
+            models.EventRecord.store_id == store_id,
+            models.EventRecord.is_staff == True,
+            models.EventRecord.event_type == "ENTRY"
+        )
+    )
+    staff_result = await db.execute(staff_query)
+    total_staff = staff_result.scalar() or 0
+
     return {
         "store_id": store_id,
         "unique_visitors": unique_visitors,
         "conversion_rate": round(conversion_rate, 4),
         "queue_depth": queue_depth,
-        "abandonment_rate": round(abandon_rate, 4)
+        "abandonment_rate": round(abandon_rate, 4),
+        "total_staff": total_staff
     }
 
 

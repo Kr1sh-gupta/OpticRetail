@@ -41,3 +41,24 @@ async def ingest_events(events: List[schemas.StoreEvent], db: AsyncSession = Dep
         raise HTTPException(status_code=500, detail=f"Database ingestion error: {str(e)}")
 
     return {"status": "success", "inserted": len(events)}
+
+
+from sqlalchemy import select
+
+@router.get("/recent")
+async def get_recent_events(limit: int = 15, db: AsyncSession = Depends(get_db)):
+    """Retrieves the latest ingested events for live dashboard feed updates."""
+    query = select(models.EventRecord).order_by(models.EventRecord.timestamp.desc()).limit(limit)
+    res = await db.execute(query)
+    records = res.scalars().all()
+    
+    events_list = []
+    for r in records:
+        events_list.append({
+            "id": r.event_id,
+            "type": r.event_type,
+            "zone": r.zone_id or r.camera_id,
+            "time": r.timestamp.strftime("%H:%M:%S") if r.timestamp else "N/A",
+            "is_staff": r.is_staff
+        })
+    return events_list
