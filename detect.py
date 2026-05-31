@@ -466,8 +466,35 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         structured = []
         for (bbox, confidence) in raw_detections:
             shirt_color, pants_color, traits = get_clothing_signatures(frame, bbox)
-            # Staff wears neutral desaturated attire (both shirt and pants have Saturation < 28 under store spotlights)
-            is_staff = bool(shirt_color[1] < 28 and pants_color[1] < 28)
+            # --- Staff Classification: Per-zone pixel-ratio black detection ---
+            # Staff wear BOTH black shirt AND black pants (all-black uniform).
+            # We count true black pixels (S<=30, V<=80) in each garment zone independently.
+            # Mean HSV fails under spotlights; pixel ratios are far more noise-resistant.
+            x1b, y1b, x2b, y2b = bbox
+            width_b = x2b - x1b
+            mx1 = x1b + int(width_b * 0.20)
+            mx2 = x1b + int(width_b * 0.80)
+            # Shirt zone: 25-50% of bbox height
+            sz_y1 = y1b + int((y2b - y1b) * 0.25)
+            sz_y2 = y1b + int((y2b - y1b) * 0.50)
+            # Pants zone: 50-75% of bbox height
+            pz_y1 = y1b + int((y2b - y1b) * 0.50)
+            pz_y2 = y1b + int((y2b - y1b) * 0.75)
+
+            shirt_roi_b = frame[sz_y1:sz_y2, mx1:mx2]
+            pants_roi_b = frame[pz_y1:pz_y2, mx1:mx2]
+
+            def _black_ratio(roi):
+                if roi.size == 0:
+                    return 0.0
+                h = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+                mask = cv2.inRange(h, np.array([0, 0, 0]), np.array([180, 30, 80]))
+                return np.sum(mask > 0) / mask.size
+
+            shirt_black = _black_ratio(shirt_roi_b)
+            pants_black = _black_ratio(pants_roi_b)
+            # Both zones must have > 35% true-black pixels
+            is_staff = bool(shirt_black > 0.35 and pants_black > 0.35)
             structured.append((bbox, is_staff, confidence, shirt_color, pants_color, traits))
 
         # Update tracker with cross-camera Re-ID matching memory
