@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, ShoppingCart, Activity, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
+import { Users, ShoppingCart, Activity, AlertCircle, TrendingUp, TrendingDown, Terminal } from 'lucide-react';
 
 export function OverviewTab() {
   const [metrics, setMetrics] = useState({
@@ -7,17 +7,30 @@ export function OverviewTab() {
   });
 
   const [funnelStages, setFunnelStages] = useState<any[]>([]);
+  const [pipelineLogs, setPipelineLogs] = useState<any[]>([]);
 
   const [events] = useState([
     { id: 1, type: "ZONE_ENTER", zone: "SKINCARE", time: "Just now" },
     { id: 2, type: "ENTRY", zone: "MAIN_DOOR", time: "2 min ago" },
     { id: 3, type: "BILLING_QUEUE_JOIN", zone: "CHECKOUT", time: "5 min ago" },
     { id: 4, type: "ZONE_DWELL", zone: "FRAGRANCE", time: "8 min ago" },
+    { id: 5, type: "ZONE_ENTER", zone: "MAKEUP", time: "12 min ago" },
+    { id: 6, type: "STAFF_INTERACTION", zone: "FRAGRANCE", time: "15 min ago" },
   ]);
+
+  const getLogColor = (message: string, level: string) => {
+    if (level === 'ERROR' || message.includes('| ERROR |')) return '#ff5252';
+    if (level === 'WARNING' || message.includes('| WARNING |')) return '#ffd740';
+    if (message.includes('[SKIP]')) return '#78909c';
+    if (message.includes('[EMIT]') || message.includes('Sent')) return '#69f0ae';
+    if (message.includes('[TRACKER]') || message.includes('REENTRY')) return '#e040fb';
+    if (message.includes('Processing:')) return '#40c4ff';
+    return '#eceff1';
+  };
 
   useEffect(() => {
     const storeId = "STORE_BLR_002";
-    
+
     // Fetch metrics
     fetch(`http://localhost:8000/stores/${storeId}/metrics`)
       .then(res => res.json())
@@ -34,12 +47,30 @@ export function OverviewTab() {
       })
       .catch(console.error);
 
+    // Fetch logs
+    const fetchLogs = () => {
+      fetch('http://localhost:8000/pipeline/logs')
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            // Get last 5 logs and reverse so newest log is at the very top of the card
+            const latest5 = data.slice(-5).reverse();
+            setPipelineLogs(latest5);
+          }
+        })
+        .catch(() => { });
+    };
+
+    fetchLogs();
+
     // Set up polling every 5 seconds for live feel
     const interval = setInterval(() => {
       fetch(`http://localhost:8000/stores/${storeId}/metrics`)
         .then(res => res.json())
         .then(data => { if (!data.error) setMetrics(data); })
-        .catch(() => {});
+        .catch(() => { });
+
+      fetchLogs();
     }, 5000);
 
     return () => clearInterval(interval);
@@ -72,21 +103,21 @@ export function OverviewTab() {
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '2rem' }}>Conversion Funnel</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           {funnelStages.length > 0 ? funnelStages.map((stage, idx) => {
-             const colors = ["var(--accent)", "var(--accent)", "var(--warning)", "var(--success)"];
-             const color = colors[idx % colors.length];
-             const maxCount = funnelStages[0].count || 1;
-             const percentage = Math.max((stage.count / maxCount) * 100, 2); // At least 2% to show the bar
-             return (
-               <FunnelBar key={stage.stage} label={stage.stage} count={stage.count} percentage={percentage} color={color} />
-             );
+            const colors = ["var(--accent)", "var(--accent)", "var(--warning)", "var(--success)"];
+            const color = colors[idx % colors.length];
+            const maxCount = funnelStages[0].count || 1;
+            const percentage = Math.max((stage.count / maxCount) * 100, 2); // At least 2% to show the bar
+            return (
+              <FunnelBar key={stage.stage} label={stage.stage} count={stage.count} percentage={percentage} color={color} />
+            );
           }) : (
-             <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Loading funnel data...</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Loading funnel data...</div>
           )}
         </div>
       </div>
-      <div className="card" style={{ gridColumn: 'span 4' }}>
+      <div className="card" style={{ gridColumn: 'span 4', gridRow: 'span 2', display: 'flex', flexDirection: 'column', minHeight: '725px' }}>
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.5rem' }}>Recent Events</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', flex: 1 }}>
           {events.map((event: any) => (
             <div key={event.id} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)' }}>
               <div style={{ background: 'var(--bg-color)', padding: '0.5rem', borderRadius: '8px' }}>
@@ -99,8 +130,99 @@ export function OverviewTab() {
             </div>
           ))}
         </div>
-        <button style={{ width: '100%', padding: '0.75rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', marginTop: '1rem', cursor: 'pointer', fontWeight: 500 }}>
-          View All Logs
+        
+        <button 
+          onClick={() => { window.location.hash = 'feeds'; }}
+          style={{
+            width: '100%',
+            padding: '0.75rem',
+            background: 'transparent',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-primary)',
+            borderRadius: '6px',
+            marginTop: 'auto',
+            cursor: 'pointer',
+            fontWeight: 500,
+            transition: 'all 0.2s'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = 'var(--accent)';
+            e.currentTarget.style.color = 'var(--accent)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'var(--border-color)';
+            e.currentTarget.style.color = 'var(--text-primary)';
+          }}
+        >
+          View Live Feeds
+        </button>
+      </div>
+
+      <div className="card" style={{ gridColumn: 'span 8', minHeight: '345px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
+          <Terminal size={18} color="var(--accent)" />
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Live Pipeline Console</h3>
+        </div>
+        
+        <div style={{
+          flex: 1,
+          background: '#09090b',
+          border: '1px solid #1e1e24',
+          borderRadius: '8px',
+          padding: '1rem',
+          fontFamily: 'Consolas, Monaco, "Courier New", Courier, monospace',
+          fontSize: '0.725rem',
+          lineHeight: '1.6',
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem',
+          boxShadow: 'inset 0 0 6px rgba(0,0,0,0.8)'
+        }}>
+          {pipelineLogs.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', flex: 1, gap: '0.5rem', color: '#6b7280', textAlign: 'center' }}>
+              <Terminal size={24} color="#4b5563" />
+              <p style={{ margin: 0, fontSize: '0.775rem' }}>No active logs. Run the edge pipeline locally.</p>
+            </div>
+          ) : (
+            pipelineLogs.map((log) => (
+              <div key={log.id} style={{
+                color: getLogColor(log.message, log.level),
+                whiteSpace: 'nowrap',
+                textOverflow: 'ellipsis',
+                overflow: 'hidden'
+              }}>
+                {log.message}
+              </div>
+            ))
+          )}
+        </div>
+
+        <button 
+          onClick={() => { window.location.hash = 'console'; }}
+          style={{
+            width: '100%',
+            padding: '0.75rem',
+            background: 'transparent',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-primary)',
+            borderRadius: '6px',
+            marginTop: '1rem',
+            cursor: 'pointer',
+            fontWeight: 500,
+            transition: 'all 0.2s'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = 'var(--accent)';
+            e.currentTarget.style.color = 'var(--accent)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'var(--border-color)';
+            e.currentTarget.style.color = 'var(--text-primary)';
+          }}
+        >
+          Open Console & View All Logs
         </button>
       </div>
     </div>

@@ -62,6 +62,17 @@ export function ConsoleTab() {
     }
   }, [logs, autoScroll]);
 
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    // Check if the user is close to the bottom (within 20px)
+    const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 20;
+    if (!isAtBottom && autoScroll) {
+      setAutoScroll(false);
+    } else if (isAtBottom && !autoScroll) {
+      setAutoScroll(true);
+    }
+  };
+
   const handleClearLogs = () => {
     fetch('http://localhost:8000/pipeline/logs', { method: 'DELETE' })
       .then(() => setLogs([]))
@@ -262,11 +273,12 @@ export function ConsoleTab() {
           </div>
         </div>
 
-        {/* The Black Terminal Screen */}
-        <div style={{
-          flex: 1,
-          background: '#09090b',
-          border: '1px solid #1e1e24',
+        <div 
+          onScroll={handleScroll}
+          style={{
+            flex: 1,
+            background: '#09090b',
+            border: '1px solid #1e1e24',
           borderRadius: '8px',
           padding: '1.25rem',
           fontFamily: 'Consolas, Monaco, "Courier New", Courier, monospace',
