@@ -422,10 +422,9 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         logger.error(f"[{cam_key}] Source not found: {source}")
         return
 
-    # Storage room is intentionally excluded from customer analytics
+    # Storage room is processed for staff security and loitering anomalies
     if cam_type == "storage":
-        logger.info(f"[{cam_key}] Skipping storage room camera (excluded from customer metrics per understanding.md).")
-        return
+        logger.info(f"[{cam_key}] Processing secure storage room camera for safety & loitering anomalies.")
 
     logger.info(f"[{cam_key}] Processing: {source}")
 
@@ -645,6 +644,40 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
                             confidence=track.confidence, session_seq=track.session_seq
                         ))
                         zone_dwells[vid] = (current_zone, frame_ts)  # Reset dwell window
+
+        # --- Secure Storage Room Anomalies (CAM4) ---
+        if cam_type == "storage":
+            for vid, track in tracker.active_tracks.items():
+                # If they are NOT classified as staff, their presence in STORAGE is unauthorized!
+                if not track.is_staff:
+                    if track.zone_id != "STORAGE":
+                        track.zone_id = "STORAGE"
+                        # 1. Emit ZONE_ENTER for unauthorized entrance
+                        buffer.add(build_event(
+                            store_id=STORE_ID, camera_id=cam_id,
+                            visitor_id=vid, event_type="ZONE_ENTER",
+                            timestamp=frame_ts, zone_id="STORAGE",
+                            is_staff=False, confidence=track.confidence,
+                            session_seq=track.session_seq
+                        ))
+                    
+                    # 2. Implement the "Billiance Heuristic": Detect suspicious confidence drops (obscuration / concealment)
+                    prev_conf = getattr(track, "prev_confidence", None)
+                    if prev_conf is not None:
+                        confidence_drop = prev_conf - track.confidence
+                        # If person/product confidence drops suddenly by > 20%
+                        if confidence_drop > 0.20:
+                            logger.warning(f"🚨 [BILLIANCE AI] Suspicious obscuration detected in secure storage! Visitor {vid} - Drop: {confidence_drop:.2f}")
+                            buffer.add(build_event(
+                                store_id=STORE_ID, camera_id=cam_id,
+                                visitor_id=vid, event_type="SUSPICIOUS_BEHAVIOR",
+                                timestamp=frame_ts, zone_id="STORAGE",
+                                is_staff=False, confidence=track.confidence,
+                                session_seq=track.session_seq
+                            ))
+                    
+                    # Update previous confidence
+                    track.prev_confidence = track.confidence
 
         # --- Entry/Exit direction for CAM3 ---
         if cam_type == "entry":
