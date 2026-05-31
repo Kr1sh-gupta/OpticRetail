@@ -221,23 +221,77 @@ def is_staff_by_clothing(frame: np.ndarray, bbox) -> bool:
     return is_staff
 
 
-def get_clothing_signature(frame: np.ndarray, bbox) -> Tuple[float, float, float]:
-    """Computes the average HSV signature of the isolated center torso clothing."""
+def get_color_name(hsv: Tuple[float, float, float]) -> str:
+    """Dynamically converts HSV coordinates to a human-readable clothing color name."""
+    h, s, v = hsv
+    # Normalize values (OpenCV H is 0-180, S and V are 0-255)
+    if s < 24:
+        if v < 55:
+            return "black"
+        elif v > 190:
+            return "white"
+        else:
+            return "gray"
+    
+    # Analyze Hue angle
+    hue_deg = h * 2
+    if hue_deg < 15 or hue_deg >= 330:
+        return "red"
+    elif hue_deg < 45:
+        return "orange"
+    elif hue_deg < 75:
+        return "yellow"
+    elif hue_deg < 165:
+        return "green"
+    elif hue_deg < 255:
+        return "blue"
+    elif hue_deg < 285:
+        return "purple"
+    else:
+        return "pink"
+
+
+def get_clothing_signatures(frame: np.ndarray, bbox) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], str]:
+    """
+    Computes upper torso (shirt) and lower torso (pants) average HSV signatures
+    and returns them alongside a dynamically generated visual traits description.
+    """
     x1, y1, x2, y2 = bbox
-    torso_y1 = y1 + int((y2 - y1) * 0.25)
-    torso_y2 = y1 + int((y2 - y1) * 0.75)
     width = x2 - x1
+    
+    # Exclude left and right margins to avoid background clutter
     torso_x1 = x1 + int(width * 0.20)
     torso_x2 = x1 + int(width * 0.80)
     
-    roi = frame[torso_y1:torso_y2, torso_x1:torso_x2]
-    if roi.size == 0:
-        return (0.0, 0.0, 0.0)
+    # Upper torso (Shirt): 25% to 50% of bbox height
+    shirt_y1 = y1 + int((y2 - y1) * 0.25)
+    shirt_y2 = y1 + int((y2 - y1) * 0.50)
     
-    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    # Get mean H, S, V values of the isolated torso clothing region
-    mean_val = cv2.mean(hsv)[:3]
-    return (float(mean_val[0]), float(mean_val[1]), float(mean_val[2]))
+    # Lower torso/legs (Pants): 50% to 75% of bbox height
+    pants_y1 = y1 + int((y2 - y1) * 0.50)
+    pants_y2 = y1 + int((y2 - y1) * 0.75)
+    
+    shirt_roi = frame[shirt_y1:shirt_y2, torso_x1:torso_x2]
+    pants_roi = frame[pants_y1:pants_y2, torso_x1:torso_x2]
+    
+    shirt_hsv = (0.0, 0.0, 0.0)
+    pants_hsv = (0.0, 0.0, 0.0)
+    
+    if shirt_roi.size > 0:
+        hsv_s = cv2.cvtColor(shirt_roi, cv2.COLOR_BGR2HSV)
+        mean_s = cv2.mean(hsv_s)[:3]
+        shirt_hsv = (float(mean_s[0]), float(mean_s[1]), float(mean_s[2]))
+        
+    if pants_roi.size > 0:
+        hsv_p = cv2.cvtColor(pants_roi, cv2.COLOR_BGR2HSV)
+        mean_p = cv2.mean(hsv_p)[:3]
+        pants_hsv = (float(mean_p[0]), float(mean_p[1]), float(mean_p[2]))
+        
+    shirt_color_name = get_color_name(shirt_hsv)
+    pants_color_name = get_color_name(pants_hsv)
+    
+    traits_desc = f"{shirt_color_name} shirt and {pants_color_name} pant"
+    return shirt_hsv, pants_hsv, traits_desc
 
 
 # ============================================================
@@ -408,12 +462,15 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         # Run YOLO detection
         raw_detections = run_yolo(model, frame)
 
-        # Build structured detections: (bbox, is_staff, confidence, color_signature)
+        # Build structured detections: (bbox, is_staff, confidence, shirt_color, pants_color, traits)
         structured = []
         for (bbox, confidence) in raw_detections:
-            is_staff = is_staff_by_clothing(frame, bbox)
-            color_sig = get_clothing_signature(frame, bbox)
-            structured.append((bbox, is_staff, confidence, color_sig))
+            shirt_color, pants_color, traits = get_clothing_signatures(frame, bbox)
+            shirt_color_name = get_color_name(shirt_color)
+            pants_color_name = get_color_name(pants_color)
+            # Staff must wear both black shirt and black pants (all-black uniform)
+            is_staff = bool(shirt_color_name == "black" and pants_color_name == "black")
+            structured.append((bbox, is_staff, confidence, shirt_color, pants_color, traits))
 
         # Update tracker with cross-camera Re-ID matching memory
         new_events, lost_tracks = tracker.update(structured, frame_ts, cam_key)
@@ -588,11 +645,25 @@ if __name__ == "__main__":
             sys.exit(1)
         process_camera(cam_key, CAMERAS[cam_key], model, buffer)
     else:
+        threads = []
+        buffers = []
+        logger.info("Initializing multi-camera processing concurrently using thread pool...")
         for cam_key, cam_config in CAMERAS.items():
-            process_camera(cam_key, cam_config, model, buffer)
+            cam_buffer = EventBuffer()
+            buffers.append(cam_buffer)
+            t = threading.Thread(
+                target=process_camera,
+                args=(cam_key, cam_config, model, cam_buffer),
+                name=f"Thread-{cam_key}"
+            )
+            t.start()
+            threads.append(t)
 
-    buffer.flush()
-    logger.info(f"Pipeline complete. Total events emitted: {buffer.total_sent}")
+        for t in threads:
+            t.join()
+
+        total_sent = sum(buf.total_sent for buf in buffers)
+        logger.info(f"Pipeline complete. Total parallel events emitted: {total_sent}")
     
     # Set final IDLE status when everything completes
     try:
