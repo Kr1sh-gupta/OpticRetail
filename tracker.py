@@ -67,7 +67,8 @@ class Track:
                     self.is_static = True
             else:
                 self.static_frames = 0
-                self.is_static = False
+                if not self.is_static:
+                    self.is_static = False
 
 
 def compute_iou(box_a: Tuple, box_b: Tuple) -> float:
@@ -197,8 +198,8 @@ class Tracker:
                 )
                 matched_ids.add(best_id)
 
-                # Confirm and emit entry events only after 3 frames of stable tracking (ideal for entrance cameras)
-                if track.total_votes >= 3 and not track.emitted_entry and not track.is_static:
+                # Confirm and emit entry events only after 12 frames of stable tracking (ensures we evaluate motion before emitting)
+                if len(track.centroid_history) >= 12 and not track.emitted_entry and not track.is_static:
                     track.emitted_entry = True
                     # Check registry safe with lock
                     with GLOBAL_REID_LOCK:
