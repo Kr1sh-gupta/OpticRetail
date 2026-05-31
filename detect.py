@@ -21,6 +21,10 @@ import urllib.request
 import argparse
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
+import time
+import queue
+import threading
+import requests
 
 import onnxruntime as ort
 
@@ -30,6 +34,73 @@ from emit import EventBuffer, build_event
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("opticretail.detect")
+
+# ============================================================
+# Live HTTP Log Stream Handler
+# ============================================================
+class HTTPLogHandler(logging.Handler):
+    """
+    Interceptors for pipeline logging to forward console output 
+    via HTTP POST requests to the FastAPI backend's /pipeline/logs.
+    Uses an internal queue & worker thread to never block the main CV engine.
+    """
+    def __init__(self, api_url: str):
+        super().__init__()
+        self.api_url = api_url
+        self.log_queue = queue.Queue()
+        self.worker_thread = threading.Thread(target=self._send_logs_worker, daemon=True)
+        self.worker_thread.start()
+
+    def emit(self, record):
+        try:
+            # Avoid infinite recursion if requests module logs something!
+            if record.name.startswith("urllib3") or record.name.startswith("requests"):
+                return
+            log_entry = {
+                "timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
+                "level": record.levelname,
+                "message": self.format(record)
+            }
+            self.log_queue.put(log_entry)
+        except Exception:
+            self.handleError(record)
+
+    def _send_logs_worker(self):
+        while True:
+            logs_to_send = []
+            try:
+                first_log = self.log_queue.get(timeout=1.0)
+                logs_to_send.append(first_log)
+                while len(logs_to_send) < 50:
+                    try:
+                        next_log = self.log_queue.get_nowait()
+                        logs_to_send.append(next_log)
+                    except queue.Empty:
+                        break
+            except queue.Empty:
+                continue
+
+            if logs_to_send:
+                try:
+                    requests.post(
+                        self.api_url,
+                        json=logs_to_send,
+                        timeout=3,
+                        headers={"Content-Type": "application/json"}
+                    )
+                except Exception:
+                    pass
+
+# Wire the HTTP handler to the root logger so ALL logs are captured
+API_INGEST_URL = os.getenv("API_INGEST_URL", "http://localhost:8000/events/ingest")
+# Derive status and log base URLs from ingest URL
+API_BASE = API_INGEST_URL.rsplit("/", 2)[0] # http://localhost:8000
+API_STATUS_URL = f"{API_BASE}/pipeline/status"
+API_LOGS_URL = f"{API_BASE}/pipeline/logs"
+
+http_log_handler = HTTPLogHandler(API_LOGS_URL)
+http_log_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
+logging.getLogger().addHandler(http_log_handler)
 
 # ============================================================
 # Configuration from .env
@@ -227,8 +298,34 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         return
 
     logger.info(f"[{cam_key}] Processing: {source}")
+    
+    # Wipe old logs at the beginning of the pipeline run
+    try:
+        requests.delete(API_LOGS_URL, timeout=2)
+    except Exception:
+        pass
+
     cap = cv2.VideoCapture(source)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total_frames <= 0:
+        total_frames = 1000
+
+    # Emit initial status
+    try:
+        requests.post(API_STATUS_URL, json={
+            "store_id": STORE_ID,
+            "camera_id": cam_key,
+            "current_frame": 0,
+            "total_frames": total_frames,
+            "percentage": 0.0,
+            "fps": 0.0,
+            "status": "PROCESSING"
+        }, timeout=2)
+    except Exception:
+        pass
+
     fps = cap.get(cv2.CAP_PROP_FPS) or 15
+    start_time = time.time()
     tracker = Tracker()
     frame_idx = 0
     # Track previous bboxes for entry/exit direction detection (CAM3)
@@ -246,6 +343,26 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         frame_idx += 1
         if frame_idx % FRAME_SKIP != 0:
             continue
+
+        # Post status update every 30 frames
+        if frame_idx % 30 == 0:
+            elapsed_time = time.time() - start_time
+            current_fps = round(frame_idx / elapsed_time, 1) if elapsed_time > 0 else 0.0
+            percentage = round((frame_idx / total_frames) * 100, 2)
+            if percentage > 100.0:
+                percentage = 100.0
+            try:
+                requests.post(API_STATUS_URL, json={
+                    "store_id": STORE_ID,
+                    "camera_id": cam_key,
+                    "current_frame": frame_idx,
+                    "total_frames": total_frames,
+                    "percentage": percentage,
+                    "fps": current_fps,
+                    "status": "PROCESSING"
+                }, timeout=1)
+            except Exception:
+                pass
 
         # Compute timestamp from video frame position
         elapsed_secs = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
@@ -396,6 +513,18 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
     cap.release()
     buffer.flush()
     logger.info(f"[{cam_key}] Processing complete.")
+    try:
+        requests.post(API_STATUS_URL, json={
+            "store_id": STORE_ID,
+            "camera_id": cam_key,
+            "current_frame": total_frames,
+            "total_frames": total_frames,
+            "percentage": 100.0,
+            "fps": 0.0,
+            "status": "COMPLETED"
+        }, timeout=2)
+    except Exception:
+        pass
 
 
 # ============================================================
@@ -421,3 +550,17 @@ if __name__ == "__main__":
 
     buffer.flush()
     logger.info(f"Pipeline complete. Total events emitted: {buffer.total_sent}")
+    
+    # Set final IDLE status when everything completes
+    try:
+        requests.post(API_STATUS_URL, json={
+            "store_id": STORE_ID,
+            "camera_id": "NONE",
+            "current_frame": 0,
+            "total_frames": 0,
+            "percentage": 0.0,
+            "fps": 0.0,
+            "status": "IDLE"
+        }, timeout=2)
+    except Exception:
+        pass
