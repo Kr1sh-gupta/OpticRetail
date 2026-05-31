@@ -298,12 +298,6 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         return
 
     logger.info(f"[{cam_key}] Processing: {source}")
-    
-    # Wipe old logs at the beginning of the pipeline run
-    try:
-        requests.delete(API_LOGS_URL, timeout=2)
-    except Exception:
-        pass
 
     cap = cv2.VideoCapture(source)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -537,6 +531,12 @@ if __name__ == "__main__":
 
     model = load_model()
     buffer = EventBuffer()
+
+    # Wipe old logs at the beginning of the entire pipeline execution run
+    try:
+        requests.delete(API_LOGS_URL, timeout=2)
+    except Exception:
+        pass
 
     if args.cam:
         cam_key = args.cam.upper()
