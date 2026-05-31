@@ -45,6 +45,29 @@ class Track:
     last_seen: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     exited: bool = False
     exit_time: Optional[datetime] = None
+    centroid_history: List[Tuple[float, float]] = field(default_factory=list)
+    static_frames: int = 0
+    is_static: bool = False
+
+    def update_centroid(self, bbox: Tuple[int, int, int, int]):
+        self.bbox = bbox
+        cx = (bbox[0] + bbox[2]) / 2.0
+        cy = (bbox[1] + bbox[3]) / 2.0
+        self.centroid_history.append((cx, cy))
+        if len(self.centroid_history) > 30:
+            self.centroid_history.pop(0)
+        if len(self.centroid_history) >= 12:
+            xs = [pt[0] for pt in self.centroid_history]
+            ys = [pt[1] for pt in self.centroid_history]
+            dx = max(xs) - min(xs)
+            dy = max(ys) - min(ys)
+            if dx < 6.0 and dy < 6.0:
+                self.static_frames += 1
+                if self.static_frames >= 10:
+                    self.is_static = True
+            else:
+                self.static_frames = 0
+                self.is_static = False
 
 
 def compute_iou(box_a: Tuple, box_b: Tuple) -> float:
@@ -151,7 +174,7 @@ class Tracker:
             if best_id:
                 # Update existing track
                 track = self.active_tracks[best_id]
-                track.bbox = bbox
+                track.update_centroid(bbox)
                 track.last_seen = now
                 track.lost_frames = 0
                 track.confidence = confidence
@@ -175,7 +198,7 @@ class Tracker:
                 matched_ids.add(best_id)
 
                 # Confirm and emit entry events only after 3 frames of stable tracking (ideal for entrance cameras)
-                if track.total_votes >= 3 and not track.emitted_entry:
+                if track.total_votes >= 3 and not track.emitted_entry and not track.is_static:
                     track.emitted_entry = True
                     # Check registry safe with lock
                     with GLOBAL_REID_LOCK:
@@ -198,7 +221,7 @@ class Tracker:
                 reentry_id = self._find_reentry_match(bbox, now)
                 if reentry_id:
                     old_track = self.exited_tracks.pop(reentry_id)
-                    old_track.bbox = bbox
+                    old_track.update_centroid(bbox)
                     old_track.exited = False
                     old_track.exit_time = None
                     old_track.last_seen = now
@@ -239,7 +262,7 @@ class Tracker:
                             if dist < best_dist and time_diff < 600:
                                 best_dist = dist
                                 matched_global_id = reg_vid
-
+ 
                     if matched_global_id:
                         vid = matched_global_id
                         with GLOBAL_REID_LOCK:
@@ -261,6 +284,7 @@ class Tracker:
                             last_seen=now,
                             emitted_entry=False
                         )
+                        new_track.update_centroid(bbox)
                         self.active_tracks[vid] = new_track
                         matched_ids.add(vid)
                         
@@ -277,7 +301,7 @@ class Tracker:
                             # Unknown person in interior/billing camera → skip.
                             # Either staff (handled by ENTRY camera) or visitor not yet seen at entrance.
                             continue
-
+ 
                         vid = self._generate_visitor_id()
                         new_track = Track(
                             visitor_id=vid,
@@ -293,6 +317,7 @@ class Tracker:
                             last_seen=now,
                             emitted_entry=False
                         )
+                        new_track.update_centroid(bbox)
                         self.active_tracks[vid] = new_track
                         matched_ids.add(vid)
                         logger.info(f"[TRACKER] [{camera_id}/ENTRY] Tracking brand new {'STAFF' if is_staff else 'VISITOR'} → {vid} with traits ({traits}) (awaiting confirmation)")

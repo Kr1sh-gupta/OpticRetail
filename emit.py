@@ -16,7 +16,7 @@ import os
 load_dotenv()
 
 API_URL = os.getenv("API_INGEST_URL", "http://localhost:8000/events/ingest")
-BATCH_SIZE = int(os.getenv("EMIT_BATCH_SIZE", 50))
+BATCH_SIZE = 1
 
 logger = logging.getLogger("opticretail.emit")
 

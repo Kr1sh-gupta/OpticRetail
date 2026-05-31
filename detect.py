@@ -509,12 +509,19 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         # Build structured detections: (bbox, is_staff, confidence, shirt_color, pants_color, traits)
         structured = []
         for (bbox, confidence) in raw_detections:
+            x1b, y1b, x2b, y2b = bbox
+            
+            # Spatial filter to reject wall poster/TV display hallucinations
+            if cam_key == "CAM1" and y2b < 450:
+                continue
+            if cam_key == "CAM2" and y2b < 400:
+                continue
+                
             shirt_color, pants_color, traits = get_clothing_signatures(frame, bbox)
             # --- Staff Classification: Per-zone pixel-ratio black detection ---
             # Staff wear BOTH black shirt AND black pants (all-black uniform).
             # We count true black pixels (S<=30, V<=80) in each garment zone independently.
             # Mean HSV fails under spotlights; pixel ratios are far more noise-resistant.
-            x1b, y1b, x2b, y2b = bbox
             width_b = x2b - x1b
             mx1 = x1b + int(width_b * 0.20)
             mx2 = x1b + int(width_b * 0.80)
@@ -549,7 +556,9 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
 
         # Update tracker with cross-camera Re-ID matching memory
         cam_role = CAMERA_ROLES.get(cam_key, "INTERIOR")
-        new_events, lost_tracks = tracker.update(structured, frame_ts, cam_key, cam_role)
+        # Initial Store Sweep Window: first 15 seconds allows all cameras to seed the active visitors
+        cam_role_eval = "ENTRY" if elapsed_secs < 15.0 else cam_role
+        new_events, lost_tracks = tracker.update(structured, frame_ts, cam_key, cam_role_eval)
 
         # --- Emit events for new/re-entered visitors ---
         for track, event_type in new_events:
@@ -585,7 +594,7 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         if cam_type == "floor" and "zones" in cam_config:
             zones = cam_config["zones"]
             for vid, track in tracker.active_tracks.items():
-                if track.is_staff:
+                if track.is_staff or track.is_static:
                     continue
                 current_zone = get_zone_for_bbox(track.bbox, zones)
                 prev_zone = track.zone_id
