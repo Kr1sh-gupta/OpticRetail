@@ -116,8 +116,14 @@ async def start_pipeline(db: AsyncSession = Depends(get_db)):
         await db.rollback()
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    pipeline_dir = os.path.abspath(os.path.join(current_dir, "..", "..", "pipeline"))
-    venv_python = os.path.join(pipeline_dir, "venv", "Scripts", "python.exe")
+    
+    if os.path.exists("/pipeline/detect.py"):
+        pipeline_dir = "/pipeline"
+        venv_python = "python"
+    else:
+        pipeline_dir = os.path.abspath(os.path.join(current_dir, "..", "..", "pipeline"))
+        venv_python = os.path.join(pipeline_dir, "venv", "Scripts", "python.exe")
+        
     detect_script = os.path.join(pipeline_dir, "detect.py")
 
     try:
