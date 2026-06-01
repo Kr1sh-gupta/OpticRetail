@@ -1,3 +1,7 @@
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
 """
 detect.py — Main Detection Pipeline
 =====================================
@@ -36,9 +40,6 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("opticretail.detect")
 
-# ============================================================
-# Live HTTP Log Stream Handler
-# ============================================================
 class HTTPLogHandler(logging.Handler):
     """
     Interceptors for pipeline logging to forward console output 
@@ -54,7 +55,6 @@ class HTTPLogHandler(logging.Handler):
 
     def emit(self, record):
         try:
-            # Avoid infinite recursion if requests module logs something!
             if record.name.startswith("urllib3") or record.name.startswith("requests"):
                 return
             log_entry = {
@@ -92,9 +92,7 @@ class HTTPLogHandler(logging.Handler):
                 except Exception:
                     pass
 
-# Wire the HTTP handler to the root logger so ALL logs are captured
 API_INGEST_URL = os.getenv("API_INGEST_URL", "http://localhost:8000/events/ingest")
-# Derive status and log base URLs from ingest URL
 API_BASE = API_INGEST_URL.rsplit("/", 2)[0] # http://localhost:8000
 API_STATUS_URL = f"{API_BASE}/pipeline/status"
 API_LOGS_URL = f"{API_BASE}/pipeline/logs"
@@ -103,25 +101,16 @@ http_log_handler = HTTPLogHandler(API_LOGS_URL)
 http_log_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
 logging.getLogger().addHandler(http_log_handler)
 
-# ============================================================
-# Configuration from .env
-# ============================================================
 STORE_ID = os.getenv("STORE_ID", "STORE_BLR_002")
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", 0.40))
 FRAME_SKIP = int(os.getenv("FRAME_SKIP", 5))
 
-# ============================================================
-# Camera Configuration
-# Maps camera env key → metadata
-# ============================================================
 CAMERAS = {
     "CAM1": {
         "source": os.getenv("CAM1_SOURCE"),
         "id":     os.getenv("CAM1_ID", "CAM_FLOOR_01"),
         "zone":   os.getenv("CAM1_ZONE", "MAIN_FLOOR_A"),
         "type":   "floor",
-        # Zone polygons [x1,y1, x2,y2] in pixel coordinates (1920x1080)
-        # TODO: Calibrate these coordinates from actual camera footage
         "zones": {
             "SKINCARE":   (0,    0,    960,  1080),
             "FRAGRANCE":  (960,  0,    1920, 1080),
@@ -142,8 +131,6 @@ CAMERAS = {
         "id":     os.getenv("CAM3_ID", "CAM_ENTRY_03"),
         "zone":   os.getenv("CAM3_ZONE", "ENTRY_EXIT"),
         "type":   "entry",
-        # Virtual tripwire Y coordinate — persons crossing this line = ENTRY/EXIT
-        # TODO: Calibrate based on actual door position in the frame
         "tripwire_y": 540,
     },
     "CAM4": {
@@ -161,10 +148,6 @@ CAMERAS = {
     },
 }
 
-# Camera roles drive who can create new visitor IDs.
-# ENTRY    → CAM3: sole source of truth for new visitors/staff entering store
-# INTERIOR → CAM1, CAM2: Re-ID existing visitors inside (no new IDs)
-# BILLING  → CAM5: billing queue — Re-ID only
 CAMERA_ROLES = {
     "CAM1": "INTERIOR",
     "CAM2": "INTERIOR",
@@ -176,9 +159,6 @@ CAMERA_ROLES = {
 YOLO_MODEL_PATH = "yolov8n.onnx"
 
 
-# ============================================================
-# Model Loading
-# ============================================================
 def load_model() -> ort.InferenceSession:
     """
     Loads the yolov8n.onnx model via onnxruntime (CPU mode).
@@ -198,21 +178,15 @@ def load_model() -> ort.InferenceSession:
     return session
 
 
-# ============================================================
-# Staff Classification — HSV Black Clothing Filter
-# Staff wear all-black uniform (confirmed in understanding.md)
-# ============================================================
 def is_staff_by_clothing(frame: np.ndarray, bbox) -> bool:
     """
     Classifies a detected person as staff if their clothing is predominantly black.
     Uses HSV color space — black pixels have low Saturation (S) and low-to-medium Value (V).
     """
     x1, y1, x2, y2 = bbox
-    # Analyse the torso region (middle 50% of bounding box height)
     torso_y1 = y1 + int((y2 - y1) * 0.25)
     torso_y2 = y1 + int((y2 - y1) * 0.75)
     
-    # Exclude left and right 20% background margins to analyze pure clothing pixels
     width = x2 - x1
     torso_x1 = x1 + int(width * 0.20)
     torso_x2 = x1 + int(width * 0.80)
@@ -222,14 +196,12 @@ def is_staff_by_clothing(frame: np.ndarray, bbox) -> bool:
         return False
 
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    # Black clothing: saturation <= 25 and value <= 68 to exclude colorful dark clothes (like dark purple) while allowing store spotlights
     lower_black = np.array([0, 0, 0])
     upper_black = np.array([180, 25, 68])
     
     mask = cv2.inRange(hsv, lower_black, upper_black)
     black_ratio = np.sum(mask > 0) / mask.size
     
-    # Expecting > 45% black pixels inside isolated center region for staff classification
     is_staff = bool(black_ratio > 0.45)
     return is_staff
 
@@ -241,20 +213,14 @@ def get_color_name(hsv: Tuple[float, float, float]) -> str:
     store spotlight compression where Saturation can appear artificially low.
     """
     h, s, v = hsv
-    # OpenCV: H is 0-180, S and V are 0-255
     hue_deg = h * 2  # Convert to standard 0-360 degrees
 
-    # --- Neutral zone check ---
-    # True black/gray/white: LOW saturation AND no dominant chromatic hue
     if s < 30:
-        # Black fabric under store/entrance lighting: S stays low but V can reach 130-140.
-        # White fabric: V > 200. Dark-chromatic (dark purple, dark navy): has slight S>=12 hint.
         if v < 85:
             return "black"
         elif v > 200:
             return "white"
         elif v < 145 and s >= 12:
-            # Dark with a chromatic hue hint — classify by Hue
             if 200 <= hue_deg < 270:
                 return "dark blue"
             elif 270 <= hue_deg < 315:
@@ -266,7 +232,6 @@ def get_color_name(hsv: Tuple[float, float, float]) -> str:
         else:
             return "gray"
 
-    # --- Chromatic zone: sufficient saturation → identify by Hue ---
     if hue_deg < 15 or hue_deg >= 330:
         return "red"
     elif hue_deg < 45:
@@ -293,14 +258,12 @@ def _zone_hsv(roi: np.ndarray) -> Tuple[float, float, float]:
     if roi.size == 0:
         return (0.0, 0.0, 0.0)
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    # Mask out extreme shadow pixels (V <= 35) — keeps real fabric color
     bright_mask = hsv[:, :, 2] > 35
     if np.sum(bright_mask) > (bright_mask.size * 0.10):
         h_vals = hsv[:, :, 0][bright_mask].astype(np.float32)
         s_vals = hsv[:, :, 1][bright_mask].astype(np.float32)
         v_vals = hsv[:, :, 2][bright_mask].astype(np.float32)
         return (float(np.mean(h_vals)), float(np.mean(s_vals)), float(np.mean(v_vals)))
-    # Fallback: full region mean
     mean = cv2.mean(hsv)[:3]
     return (float(mean[0]), float(mean[1]), float(mean[2]))
 
@@ -313,15 +276,12 @@ def get_clothing_signatures(frame: np.ndarray, bbox) -> Tuple[Tuple[float, float
     x1, y1, x2, y2 = bbox
     width = x2 - x1
     
-    # Exclude left and right margins to avoid background clutter
     torso_x1 = x1 + int(width * 0.20)
     torso_x2 = x1 + int(width * 0.80)
     
-    # Upper torso (Shirt): 25% to 50% of bbox height
     shirt_y1 = y1 + int((y2 - y1) * 0.25)
     shirt_y2 = y1 + int((y2 - y1) * 0.50)
     
-    # Lower torso/legs (Pants): 50% to 75% of bbox height
     pants_y1 = y1 + int((y2 - y1) * 0.50)
     pants_y2 = y1 + int((y2 - y1) * 0.75)
     
@@ -338,9 +298,6 @@ def get_clothing_signatures(frame: np.ndarray, bbox) -> Tuple[Tuple[float, float
     return shirt_hsv, pants_hsv, traits_desc
 
 
-# ============================================================
-# YOLO Inference
-# ============================================================
 def run_yolo(session: ort.InferenceSession, frame: np.ndarray):
     """
     Runs YOLOv8 ONNX inference on a single frame.
@@ -355,7 +312,6 @@ def run_yolo(session: ort.InferenceSession, frame: np.ndarray):
     input_name = session.get_inputs()[0].name
     outputs = session.run(None, {input_name: img})[0]
 
-    # YOLOv8 output shape: [1, 84, 8400] → transpose → [8400, 84]
     predictions = np.squeeze(outputs).T
     frame_h, frame_w = frame.shape[:2]
     detections = []
@@ -369,13 +325,11 @@ def run_yolo(session: ort.InferenceSession, frame: np.ndarray):
         if class_id != 0 or confidence < CONFIDENCE_THRESHOLD:
             continue
 
-        # Convert normalised YOLO coords to frame pixel coords
         x1 = int((cx - w / 2) * frame_w / input_w)
         y1 = int((cy - h / 2) * frame_h / input_h)
         x2 = int((cx + w / 2) * frame_w / input_w)
         y2 = int((cy + h / 2) * frame_h / input_h)
 
-        # Clamp to frame bounds
         x1, y1 = max(0, x1), max(0, y1)
         x2, y2 = min(frame_w - 1, x2), min(frame_h - 1, y2)
 
@@ -384,9 +338,6 @@ def run_yolo(session: ort.InferenceSession, frame: np.ndarray):
     return detections
 
 
-# ============================================================
-# Zone Mapping
-# ============================================================
 def get_zone_for_bbox(bbox, zones: dict) -> str:
     """Returns the zone name if the center of the bounding box falls within it."""
     cx = (bbox[0] + bbox[2]) // 2
@@ -410,9 +361,6 @@ def get_entry_direction(bbox, prev_bbox, tripwire_y: int) -> str:
     return None
 
 
-# ============================================================
-# Process a single camera
-# ============================================================
 def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, buffer: EventBuffer):
     source = cam_config.get("source")
     cam_id = cam_config["id"]
@@ -422,7 +370,6 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         logger.error(f"[{cam_key}] Source not found: {source}")
         return
 
-    # Storage room is processed for staff security and loitering anomalies
     if cam_type == "storage":
         logger.info(f"[{cam_key}] Processing secure storage room camera for safety & loitering anomalies.")
 
@@ -433,7 +380,6 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
     if total_frames <= 0:
         total_frames = 1000
 
-    # Emit initial status
     try:
         requests.post(API_STATUS_URL, json={
             "store_id": STORE_ID,
@@ -451,10 +397,8 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
     start_time = time.time()
     tracker = Tracker()
     frame_idx = 0
-    # Track previous bboxes for entry/exit direction detection (CAM3)
     prev_bboxes = {}
 
-    # For ZONE_DWELL tracking: visitor_id → (zone, enter_time)
     zone_dwells = {}
     DWELL_INTERVAL_MS = 30000  # emit ZONE_DWELL every 30s of continuous dwell
 
@@ -467,7 +411,6 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         if frame_idx % FRAME_SKIP != 0:
             continue
 
-        # Post status update every 30 frames
         if frame_idx % 30 == 0:
             elapsed_time = time.time() - start_time
             current_fps = round(frame_idx / elapsed_time, 1) if elapsed_time > 0 else 0.0
@@ -487,7 +430,6 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
             except Exception:
                 pass
 
-        # Compute timestamp from video frame position matching exact burn-in time on CCTV footage
         elapsed_secs = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
         cam_start_times = {
             "CAM1": (20, 10, 29),
@@ -497,43 +439,32 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
             "CAM5": (20, 9, 48),
         }
         start_h, start_m, start_s = cam_start_times.get(cam_key, (20, 10, 0))
-        # Use today's date so dashboard times are fresh, but preserve exact video timing
-        today = datetime.now(timezone.utc).date()
-        base_time = datetime(today.year, today.month, today.day, start_h, start_m, start_s, tzinfo=timezone.utc)
+        ist = timezone(timedelta(hours=5, minutes=30))
+        base_time = datetime(2026, 4, 10, start_h, start_m, start_s, tzinfo=ist)
         frame_ts = base_time + timedelta(seconds=elapsed_secs)
 
-        # Run YOLO detection
         raw_detections = run_yolo(model, frame)
 
-        # Build structured detections: (bbox, is_staff, confidence, shirt_color, pants_color, traits)
         structured = []
         for (bbox, confidence) in raw_detections:
             x1b, y1b, x2b, y2b = bbox
             
-            # Spatial filter to reject wall poster/TV display hallucinations
             if cam_key == "CAM1" and y2b < 450:
                 continue
             if cam_key == "CAM2" and y2b < 400:
                 continue
             
-            # Spatial filter for CAM3 (ignore street traffic on the sidewalk outside, X > 1150)
             if cam_key == "CAM3":
                 cx = (x1b + x2b) / 2.0
                 if cx > 1150:
                     continue
                 
             shirt_color, pants_color, traits = get_clothing_signatures(frame, bbox)
-            # --- Staff Classification: Per-zone pixel-ratio black detection ---
-            # Staff wear BOTH black shirt AND black pants (all-black uniform).
-            # We count true black pixels (S<=30, V<=80) in each garment zone independently.
-            # Mean HSV fails under spotlights; pixel ratios are far more noise-resistant.
             width_b = x2b - x1b
             mx1 = x1b + int(width_b * 0.20)
             mx2 = x1b + int(width_b * 0.80)
-            # Shirt zone: 25-50% of bbox height
             sz_y1 = y1b + int((y2b - y1b) * 0.25)
             sz_y2 = y1b + int((y2b - y1b) * 0.50)
-            # Pants zone: 50-75% of bbox height
             pz_y1 = y1b + int((y2b - y1b) * 0.50)
             pz_y2 = y1b + int((y2b - y1b) * 0.75)
 
@@ -548,24 +479,18 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
                 if roi.size == 0:
                     return 0.0
                 h = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-                # Low saturation (S<=35) = achromatic = black/gray/white
-                # V<=140 = not white (white has V>200) but includes store-lit black fabric
                 mask = cv2.inRange(h, np.array([0, 0, 0]), np.array([180, 35, 140]))
                 return np.sum(mask > 0) / mask.size
 
             shirt_black = _black_ratio(shirt_roi_b)
             pants_black = _black_ratio(pants_roi_b)
-            # Both zones must have > 28% achromatic dark pixels — staff wear full-black uniform
             is_staff = bool(shirt_black > 0.28 and pants_black > 0.28)
             structured.append((bbox, is_staff, confidence, shirt_color, pants_color, traits))
 
-        # Update tracker with cross-camera Re-ID matching memory
         cam_role = CAMERA_ROLES.get(cam_key, "INTERIOR")
-        # Initial Store Sweep Window: first 15 seconds allows all cameras to seed the active visitors
         cam_role_eval = "ENTRY" if elapsed_secs < 15.0 else cam_role
         new_events, lost_tracks = tracker.update(structured, frame_ts, cam_key, cam_role_eval)
 
-        # --- Emit events for new/re-entered visitors ---
         for track, event_type in new_events:
             event = build_event(
                 store_id=STORE_ID,
@@ -579,7 +504,6 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
             )
             buffer.add(event)
 
-        # --- Emit EXIT events for lost tracks ---
         for track in lost_tracks:
             event = build_event(
                 store_id=STORE_ID,
@@ -592,10 +516,8 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
                 session_seq=track.session_seq,
             )
             buffer.add(event)
-            # Clean up dwell tracking
             zone_dwells.pop(track.visitor_id, None)
 
-        # --- Zone events for floor cameras ---
         if cam_type == "floor" and "zones" in cam_config:
             zones = cam_config["zones"]
             for vid, track in tracker.active_tracks.items():
@@ -606,7 +528,6 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
 
                 if current_zone != prev_zone:
                     if prev_zone:
-                        # ZONE_EXIT from old zone
                         dwell_ms = 0
                         if vid in zone_dwells:
                             enter_time = zone_dwells[vid][1]
@@ -620,7 +541,6 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
                             confidence=track.confidence, session_seq=track.session_seq
                         ))
                     if current_zone:
-                        # ZONE_ENTER to new zone
                         zone_dwells[vid] = (current_zone, frame_ts)
                         buffer.add(build_event(
                             store_id=STORE_ID, camera_id=cam_id,
@@ -631,7 +551,6 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
                         ))
                     track.zone_id = current_zone
 
-                # ZONE_DWELL: emit every 30s of continuous dwell
                 elif current_zone and vid in zone_dwells:
                     enter_time = zone_dwells[vid][1]
                     elapsed_ms = int((frame_ts - enter_time).total_seconds() * 1000)
@@ -645,14 +564,11 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
                         ))
                         zone_dwells[vid] = (current_zone, frame_ts)  # Reset dwell window
 
-        # --- Secure Storage Room Anomalies (CAM4) ---
         if cam_type == "storage":
             for vid, track in tracker.active_tracks.items():
-                # If they are NOT classified as staff, their presence in STORAGE is unauthorized!
                 if not track.is_staff:
                     if track.zone_id != "STORAGE":
                         track.zone_id = "STORAGE"
-                        # 1. Emit ZONE_ENTER for unauthorized entrance
                         buffer.add(build_event(
                             store_id=STORE_ID, camera_id=cam_id,
                             visitor_id=vid, event_type="ZONE_ENTER",
@@ -661,11 +577,9 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
                             session_seq=track.session_seq
                         ))
                     
-                    # 2. Implement the "Billiance Heuristic": Detect suspicious confidence drops (obscuration / concealment)
                     prev_conf = getattr(track, "prev_confidence", None)
                     if prev_conf is not None:
                         confidence_drop = prev_conf - track.confidence
-                        # If person/product confidence drops suddenly by > 20%
                         if confidence_drop > 0.20:
                             logger.warning(f"🚨 [BILLIANCE AI] Suspicious obscuration detected in secure storage! Visitor {vid} - Drop: {confidence_drop:.2f}")
                             buffer.add(build_event(
@@ -676,10 +590,8 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
                                 session_seq=track.session_seq
                             ))
                     
-                    # Update previous confidence
                     track.prev_confidence = track.confidence
 
-        # --- Entry/Exit direction for CAM3 ---
         if cam_type == "entry":
             tripwire_y = cam_config.get("tripwire_y", 540)
             for vid, track in tracker.active_tracks.items():
@@ -695,10 +607,8 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
                         timestamp=frame_ts, is_staff=track.is_staff,
                         confidence=track.confidence, session_seq=track.session_seq
                     ))
-            # Save current bboxes for next frame
             prev_bboxes = {vid: t.bbox for vid, t in tracker.active_tracks.items()}
 
-        # --- Billing queue depth for CAM5 ---
         if cam_type == "billing" and "billing_zone" in cam_config:
             bz = cam_config["billing_zone"]
             queue_count = 0
@@ -711,7 +621,6 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
                     queue_count += 1
 
             if queue_count > 0:
-                # Emit a BILLING_QUEUE_JOIN for each person in the queue zone
                 for vid, track in tracker.active_tracks.items():
                     if track.is_staff:
                         continue
@@ -744,9 +653,6 @@ def process_camera(cam_key: str, cam_config: dict, model: ort.InferenceSession, 
         pass
 
 
-# ============================================================
-# Main Entry Point
-# ============================================================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OpticRetail Detection Pipeline")
     parser.add_argument("--cam", type=str, default=None, help="Process single camera (e.g. CAM1). Default: all cameras.")
@@ -755,7 +661,6 @@ if __name__ == "__main__":
     model = load_model()
     buffer = EventBuffer()
 
-    # Wipe old logs and reset Re-ID registry at the beginning of the entire pipeline execution run
     reset_global_reid_registry()
     try:
         requests.delete(API_LOGS_URL, timeout=2)
@@ -789,7 +694,6 @@ if __name__ == "__main__":
         total_sent = sum(buf.total_sent for buf in buffers)
         logger.info(f"Pipeline complete. Total parallel events emitted: {total_sent}")
     
-    # Set final IDLE status when everything completes
     try:
         requests.post(API_STATUS_URL, json={
             "store_id": STORE_ID,
