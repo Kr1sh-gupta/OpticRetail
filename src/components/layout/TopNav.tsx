@@ -4,15 +4,40 @@ import { Bell, Search, Clock } from 'lucide-react';
 const STORE_ID = "STORE_BLR_002";
 
 export function TopNav() {
-  const [time, setTime] = useState(new Date());
+  // Start simulation clock at exact CCTV burn-in time: 2026-04-10 20:10:30
+  // Persist across refreshes using localStorage
+  const getInitialTime = () => {
+    const saved = localStorage.getItem('sim_time');
+    return saved ? new Date(saved) : new Date("2026-04-10T20:10:30");
+  };
+  
+  const [time, setTime] = useState(getInitialTime);
 
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(timer);
+    const handleReset = () => {
+      const resetTime = new Date("2026-04-10T20:10:30");
+      setTime(resetTime);
+      localStorage.setItem('sim_time', resetTime.toISOString());
+    };
+    
+    window.addEventListener('reset_sim_clock', handleReset);
+    
+    const timer = setInterval(() => {
+      setTime(prev => {
+        const next = new Date(prev.getTime() + 1000);
+        localStorage.setItem('sim_time', next.toISOString());
+        return next;
+      });
+    }, 1000);
+    
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('reset_sim_clock', handleReset);
+    };
   }, []);
 
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    return date.toLocaleDateString('en-GB') + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   };
 
   return (

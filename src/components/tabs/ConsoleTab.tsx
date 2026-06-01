@@ -80,6 +80,7 @@ export function ConsoleTab() {
   };
 
   const handleStartPipeline = () => {
+    window.dispatchEvent(new Event('reset_sim_clock'));
     fetch('http://localhost:8000/pipeline/logs', { method: 'DELETE' })
       .then(() => setLogs([]))
       .then(() => fetch('http://localhost:8000/pipeline/start', { method: 'POST' }))

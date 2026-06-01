@@ -86,8 +86,32 @@ export function OverviewTab() {
     return () => clearInterval(interval);
   }, []);
 
+  const handleStartPipeline = () => {
+    window.dispatchEvent(new Event('reset_sim_clock'));
+    fetch('http://localhost:8000/pipeline/logs', { method: 'DELETE' })
+      .then(() => setPipelineLogs([]))
+      .then(() => fetch('http://localhost:8000/pipeline/start', { method: 'POST' }))
+      .then(res => res.json())
+      .then(() => alert("Simulation started! CCTV and POS feeds are now streaming live."))
+      .catch(console.error);
+  };
+
   return (
     <div className="content-grid">
+      <div style={{ gridColumn: 'span 12', background: 'rgba(255, 179, 0, 0.15)', border: '1px solid #ffb300', padding: '1rem 1.5rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+        <div>
+          <h3 style={{ margin: 0, color: '#ffb300', fontSize: '1.1rem', fontWeight: 600 }}>Enterprise Demo Simulation</h3>
+          <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Click start to automatically stream synchronized historical CCTV feeds and POS transactions.</p>
+        </div>
+        <button 
+          onClick={handleStartPipeline}
+          style={{ background: '#ffb300', color: '#000', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '6px', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          Start Simulation
+        </button>
+      </div>
+
       <div style={{ gridColumn: 'span 12', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
         <div className="card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="metric-label">Total Visitors</span><Users size={20} color="var(--text-secondary)" /></div>
