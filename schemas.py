@@ -1,3 +1,7 @@
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from datetime import datetime

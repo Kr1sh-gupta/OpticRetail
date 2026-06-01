@@ -1,14 +1,10 @@
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
 """
 test_anomalies.py — Tests for GET /stores/{id}/anomalies
 =========================================================
-# PROMPT: "Write pytest async tests for a rule-based anomaly detection
-# API endpoint. Cover: queue spike detection when queue_depth > 8,
-# normal operation returning INFO/clear status, dead zone detection
-# (zone with no activity in 30 min), and loitering detection
-# (dwell_ms > 600000 in single zone)."
-#
-# CHANGES MADE: Added unique store_id per test to prevent interference.
-# Used metadata dict format that matches the actual EventRecord schema.
 """
 import pytest
 import uuid

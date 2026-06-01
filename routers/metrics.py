@@ -1,16 +1,20 @@
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from database import get_db
 import models
 import schemas
+from datetime import timedelta
 
 router = APIRouter(prefix="/stores", tags=["metrics"])
 
 
 @router.get("/{store_id}/metrics")
 async def get_metrics(store_id: str, db: AsyncSession = Depends(get_db)):
-    # 1. Unique visitors (not staff)
     visitors_query = select(func.count(func.distinct(models.EventRecord.visitor_id))).where(
         and_(
             models.EventRecord.store_id == store_id,
@@ -21,16 +25,6 @@ async def get_metrics(store_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(visitors_query)
     unique_visitors = result.scalar() or 0
 
-    # 2. Conversion rate
-    tx_query = select(func.count(func.distinct(models.PosTransactionRecord.transaction_id))).where(
-        models.PosTransactionRecord.store_id == store_id
-    )
-    tx_result = await db.execute(tx_query)
-    total_tx = tx_result.scalar() or 0
-
-    conversion_rate = (total_tx / unique_visitors) if unique_visitors > 0 else 0
-
-    # 3. Queue Depth (Latest BILLING_QUEUE_JOIN event's queue_depth)
     queue_query = select(models.EventRecord.metadata_json).where(
         and_(
             models.EventRecord.store_id == store_id,
@@ -43,28 +37,40 @@ async def get_metrics(store_id: str, db: AsyncSession = Depends(get_db)):
     if latest_queue and isinstance(latest_queue, dict):
         queue_depth = latest_queue.get("queue_depth", 0)
 
-    # 4. Abandonment Rate
-    joins_query = select(func.count(models.EventRecord.event_id)).where(
+    queue_q = select(
+        models.EventRecord.visitor_id,
+        func.min(models.EventRecord.timestamp).label("join_time")
+    ).where(
         and_(
             models.EventRecord.store_id == store_id,
             models.EventRecord.event_type == "BILLING_QUEUE_JOIN"
         )
-    )
-    joins_res = await db.execute(joins_query)
-    queue_joins = joins_res.scalar() or 0
+    ).group_by(models.EventRecord.visitor_id)
+    queue_res = await db.execute(queue_q)
+    queue_visitors = queue_res.all()
+    queue_joins = len(queue_visitors)
 
-    abandons_query = select(func.count(models.EventRecord.event_id)).where(
-        and_(
-            models.EventRecord.store_id == store_id,
-            models.EventRecord.event_type == "BILLING_QUEUE_ABANDON"
-        )
+    tx_q = select(models.PosTransactionRecord.timestamp).where(
+        models.PosTransactionRecord.store_id == store_id
     )
-    abandons_res = await db.execute(abandons_query)
-    queue_abandons = abandons_res.scalar() or 0
+    tx_res = await db.execute(tx_q)
+    pos_timestamps = [r[0] for r in tx_res.all()]
+
+    queue_abandons = 0
+    converted_count = 0
+    for visitor_id, join_time in queue_visitors:
+        if join_time is None:
+            continue
+        window_end = join_time + timedelta(minutes=15)
+        converted = any(join_time <= pos_ts <= window_end for pos_ts in pos_timestamps)
+        if converted:
+            converted_count += 1
+        else:
+            queue_abandons += 1
 
     abandon_rate = (queue_abandons / queue_joins) if queue_joins > 0 else 0
+    conversion_rate = (converted_count / unique_visitors) if unique_visitors > 0 else 0
 
-    # 5. Total staff (is_staff = True)
     staff_query = select(func.count(func.distinct(models.EventRecord.visitor_id))).where(
         and_(
             models.EventRecord.store_id == store_id,
@@ -96,33 +102,43 @@ async def get_funnel(store_id: str, db: AsyncSession = Depends(get_db)):
         models.EventRecord.is_staff == False
     )
 
-    # Stage 1: Unique customer entries (deduplicated by visitor_id)
     entry_q = select(func.count(func.distinct(models.EventRecord.visitor_id))).where(
         and_(base_filter, models.EventRecord.event_type == "ENTRY")
     )
     entry_res = await db.execute(entry_q)
     store_entry = entry_res.scalar() or 0
 
-    # Stage 2: Visitors who entered at least one zone
     zone_q = select(func.count(func.distinct(models.EventRecord.visitor_id))).where(
         and_(base_filter, models.EventRecord.event_type == "ZONE_ENTER")
     )
     zone_res = await db.execute(zone_q)
     zone_interaction = zone_res.scalar() or 0
 
-    # Stage 3: Visitors who joined the billing queue
-    queue_q = select(func.count(func.distinct(models.EventRecord.visitor_id))).where(
+    queue_q = select(
+        models.EventRecord.visitor_id,
+        func.min(models.EventRecord.timestamp).label("join_time")
+    ).where(
         and_(base_filter, models.EventRecord.event_type == "BILLING_QUEUE_JOIN")
-    )
+    ).group_by(models.EventRecord.visitor_id)
+    
     queue_res = await db.execute(queue_q)
-    queue_joined = queue_res.scalar() or 0
+    queue_visitors = queue_res.all()
+    queue_joined = len(queue_visitors)
 
-    # Stage 4: POS transactions (proxy for purchase)
-    tx_q = select(func.count(func.distinct(models.PosTransactionRecord.transaction_id))).where(
+    tx_q = select(models.PosTransactionRecord.timestamp).where(
         models.PosTransactionRecord.store_id == store_id
     )
     tx_res = await db.execute(tx_q)
-    pos_success = tx_res.scalar() or 0
+    pos_timestamps = [r[0] for r in tx_res.all()]
+    
+    pos_success = 0
+    for visitor_id, join_time in queue_visitors:
+        if join_time is None:
+            continue
+        window_end = join_time + timedelta(minutes=15)
+        converted = any(join_time <= pos_ts <= window_end for pos_ts in pos_timestamps)
+        if converted:
+            pos_success += 1
 
     def drop_pct(current, previous):
         if previous == 0:
@@ -228,7 +244,6 @@ async def get_audience_intelligence(store_id: str, db: AsyncSession = Depends(ge
     Computes dynamic spatial audience intelligence, active visitor sessions, VLM traits,
     and queue-based staff reallocation recommendations.
     """
-    # 1. Fetch recent events to identify active/recent visitors
     recent_query = select(models.EventRecord).where(
         models.EventRecord.store_id == store_id
     ).order_by(models.EventRecord.timestamp.desc()).limit(150)
@@ -236,7 +251,6 @@ async def get_audience_intelligence(store_id: str, db: AsyncSession = Depends(ge
     result = await db.execute(recent_query)
     events = result.scalars().all()
     
-    # 2. Group events by visitor_id
     visitor_events = {}
     for ev in events:
         vid = ev.visitor_id
@@ -264,7 +278,6 @@ async def get_audience_intelligence(store_id: str, db: AsyncSession = Depends(ge
             return [shirt, pants, acc1]
         return [shirt, pants, acc1, acc2]
 
-    # Show top 6 active/recent visitor profiles
     for vid, evs in list(visitor_events.items())[:6]:
         evs_sorted = sorted(evs, key=lambda x: x.timestamp)
         first_event = evs_sorted[0]
@@ -302,7 +315,6 @@ async def get_audience_intelligence(store_id: str, db: AsyncSession = Depends(ge
             "is_danger": v_type == "SUSPICIOUS"
         })
 
-    # 3. Dynamic Staff Reallocation recommendation based on checkout queue depth
     queue_query = select(models.EventRecord.metadata_json).where(
         and_(
             models.EventRecord.store_id == store_id,

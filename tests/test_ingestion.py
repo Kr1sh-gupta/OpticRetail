@@ -1,14 +1,10 @@
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
 """
 test_ingestion.py — Tests for POST /events/ingest
 ==================================================
-# PROMPT: "Write pytest tests for a FastAPI endpoint that ingests
-# batches of store events into PostgreSQL with ON CONFLICT DO NOTHING
-# idempotency. Cover: basic ingest, idempotency (same event twice = count stays 1),
-# batch of 100, empty batch, and malformed event handling."
-#
-# CHANGES MADE: Added async_sessionmaker to fixture, added explicit
-# event_id assertion on idempotency test, scoped fixture to function
-# to prevent test state pollution.
 """
 import pytest
 import uuid
@@ -70,7 +66,6 @@ async def test_idempotency():
         r2 = await client.post("/events/ingest", json=[event])
     assert r1.status_code == 200
     assert r2.status_code == 200
-    # Both calls succeed — the DB simply ignores the duplicate
 
 
 @pytest.mark.asyncio

@@ -1,1 +1,5 @@
-# This file makes routers a Python package
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
+

@@ -1,3 +1,7 @@
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, text
@@ -17,10 +21,6 @@ async def get_anomalies(store_id: str, db: AsyncSession = Depends(get_db)):
     now = datetime.now(timezone.utc)
     anomalies = []
 
-    # ----------------------------------------------------------------
-    # RULE 1: BILLING_QUEUE_SPIKE
-    # Trigger: queue_depth > 8 in any event in the last 10 minutes
-    # ----------------------------------------------------------------
     ten_min_ago = now - timedelta(minutes=10)
     queue_events_q = select(models.EventRecord.metadata_json).where(
         and_(
@@ -51,10 +51,6 @@ async def get_anomalies(store_id: str, db: AsyncSession = Depends(get_db)):
             "suggested_action": f"Open an additional register immediately. Reallocate 1 staff member from the lowest-traffic zone to billing."
         })
 
-    # ----------------------------------------------------------------
-    # RULE 2: DEAD_ZONE
-    # Trigger: A known zone has had zero ZONE_ENTER events in last 30 min
-    # ----------------------------------------------------------------
     thirty_min_ago = now - timedelta(minutes=30)
     active_zones_q = select(func.distinct(models.EventRecord.zone_id)).where(
         and_(
@@ -68,7 +64,6 @@ async def get_anomalies(store_id: str, db: AsyncSession = Depends(get_db)):
     active_res = await db.execute(active_zones_q)
     active_zones = {row for row in active_res.scalars().all()}
 
-    # Get all zones ever seen for this store
     all_zones_q = select(func.distinct(models.EventRecord.zone_id)).where(
         and_(
             models.EventRecord.store_id == store_id,
@@ -92,10 +87,6 @@ async def get_anomalies(store_id: str, db: AsyncSession = Depends(get_db)):
                 "suggested_action": f"Consider reallocating a staff member to {zone} to engage customers, or review product placement."
             })
 
-    # ----------------------------------------------------------------
-    # RULE 3: LOITERING / SUSPICIOUS DWELL
-    # Trigger: Any ZONE_DWELL event with dwell_ms > 10 minutes (600,000ms)
-    # ----------------------------------------------------------------
     loiter_q = select(
         models.EventRecord.visitor_id,
         models.EventRecord.zone_id,
@@ -124,10 +115,6 @@ async def get_anomalies(store_id: str, db: AsyncSession = Depends(get_db)):
             "suggested_action": "Dispatch an associate to the zone for customer assistance or loss-prevention check."
         })
 
-    # ----------------------------------------------------------------
-    # RULE 4: CONVERSION_DROP
-    # Trigger: Visitors exist but conversion_rate = 0
-    # ----------------------------------------------------------------
     visitor_q = select(func.count(func.distinct(models.EventRecord.visitor_id))).where(
         and_(
             models.EventRecord.store_id == store_id,
@@ -155,10 +142,6 @@ async def get_anomalies(store_id: str, db: AsyncSession = Depends(get_db)):
             "suggested_action": "Check POS terminal connectivity. Verify transaction data is syncing correctly."
         })
 
-    # ----------------------------------------------------------------
-    # RULE 5: UNAUTHORIZED_STORAGE_ENTRY
-    # Trigger: Any ZONE_ENTER event with zone_id == "STORAGE" and is_staff == False in the last 15 min
-    # ----------------------------------------------------------------
     fifteen_min_ago = now - timedelta(minutes=15)
     unauthorized_q = select(models.EventRecord.visitor_id, models.EventRecord.timestamp).where(
         and_(
@@ -183,10 +166,6 @@ async def get_anomalies(store_id: str, db: AsyncSession = Depends(get_db)):
             "suggested_action": "Security associate should immediately inspect storage room and escort visitor out."
         })
 
-    # ----------------------------------------------------------------
-    # RULE 6: SUSPICIOUS_CONCEALMENT_THEFT
-    # Trigger: Any SUSPICIOUS_BEHAVIOR event in the last 15 minutes
-    # ----------------------------------------------------------------
     suspicious_q = select(models.EventRecord.visitor_id, models.EventRecord.timestamp).where(
         and_(
             models.EventRecord.store_id == store_id,

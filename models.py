@@ -1,3 +1,7 @@
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
 from sqlalchemy import Column, String, Float, Integer, Boolean, DateTime, JSON
 from database import Base
 
@@ -18,8 +22,6 @@ class EventRecord(Base):
 
 class PosTransactionRecord(Base):
     __tablename__ = "pos_transactions"
-    # Keeping table definition here for SQLAlchemy to recognize it, 
-    # even though it's created by init.sql
     store_id = Column(String, index=True)
     transaction_id = Column(String, primary_key=True, index=True)
     timestamp = Column(DateTime(timezone=True), index=True)

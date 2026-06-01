@@ -1,3 +1,7 @@
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
 import time
 import uuid
 import logging
@@ -12,7 +16,6 @@ from datetime import datetime, timezone, timedelta
 import models
 import uvicorn
 
-# Structured logging setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s | %(levelname)s | %(message)s'
@@ -25,7 +28,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Allow frontend dashboard to access API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,16 +35,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ----------------------------------------------------------------
-# Structured Request Logging Middleware
-# Logs: trace_id, endpoint, latency_ms, status_code
-# ----------------------------------------------------------------
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     trace_id = str(uuid.uuid4())[:8]
     start = time.time()
     
-    # Extract store_id from path if present
     path_parts = request.url.path.split("/")
     store_id = path_parts[2] if len(path_parts) > 2 and path_parts[1] == "stores" else "N/A"
 
@@ -76,9 +73,6 @@ async def startup():
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database schema ready.")
     except Exception as e:
-        # Two replicas starting simultaneously can race on CREATE TABLE.
-        # The replica that loses the race gets a pg_type catalog collision.
-        # This is safe to ignore — the winning replica already created the schema.
         logger.warning(f"Schema init skipped (parallel replica won the race): {type(e).__name__}")
 
 
@@ -92,7 +86,6 @@ async def health_check():
 
     try:
         async with AsyncSessionLocal() as db:
-            # Get last event timestamp per store
             q = select(
                 models.EventRecord.store_id,
                 func.max(models.EventRecord.timestamp).label("last_ts")

@@ -1,23 +1,23 @@
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
 import subprocess
 import sys
 
-# List of all test cases in the test files
 tests = [
-    # Ingestion
     "tests/test_ingestion.py::test_basic_ingest",
     "tests/test_ingestion.py::test_idempotency",
     "tests/test_ingestion.py::test_empty_batch",
     "tests/test_ingestion.py::test_batch_of_100",
     "tests/test_ingestion.py::test_staff_event_ingest",
 
-    # Metrics
     "tests/test_metrics.py::test_metrics_zero_visitors",
     "tests/test_metrics.py::test_funnel_no_double_count_reentry",
     "tests/test_metrics.py::test_heatmap_returns_normalised_data",
     "tests/test_metrics.py::test_heatmap_low_confidence_flag",
     "tests/test_metrics.py::test_funnel_drop_off_pct",
 
-    # Anomalies
     "tests/test_anomalies.py::test_loitering_detection",
     "tests/test_anomalies.py::test_anomaly_has_suggested_action",
     "tests/test_anomalies.py::test_queue_spike_warn",

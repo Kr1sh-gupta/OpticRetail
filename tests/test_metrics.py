@@ -1,13 +1,10 @@
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
 """
 test_metrics.py — Tests for GET /stores/{id}/metrics, /funnel, /heatmap
 ========================================================================
-# PROMPT: "Write pytest async tests for a FastAPI store analytics API.
-# The /metrics endpoint must handle: zero-visitor store (returns 0, not null),
-# correct conversion rate calculation, funnel session deduplication
-# (re-entries must not double-count a visitor), and heatmap normalisation."
-#
-# CHANGES MADE: Added explicit store_id isolation per test using random prefixes
-# to prevent cross-test pollution. Added data_confidence assertion to heatmap test.
 """
 import pytest
 import uuid
@@ -71,7 +68,6 @@ async def test_funnel_no_double_count_reentry():
     assert r.status_code == 200
     stages = r.json()["stages"]
     entry_stage = next(s for s in stages if s["stage"] == "Store Entry")
-    # Must be 1, not 2 — REENTRY should not inflate entry count
     assert entry_stage["count"] == 1
 
 
@@ -101,7 +97,6 @@ async def test_heatmap_low_confidence_flag():
     """data_confidence must be False when session count < 20."""
     store_id = f"STORE_LOWCONF_{uuid.uuid4().hex[:4]}"
 
-    # Only 3 zone events — below the 20-session threshold
     events = [make_event(store_id, "ZONE_ENTER", zone_id="MAKEUP") for _ in range(3)]
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.post("/events/ingest", json=events)

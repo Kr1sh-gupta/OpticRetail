@@ -1,3 +1,7 @@
+# ============================================================================
+# Copyright (c) 2026 Krish Gupta
+# Licensed under the MIT License.
+# ============================================================================
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +33,6 @@ async def ingest_events(events: List[schemas.StoreEvent], db: AsyncSession = Dep
             "metadata_json": event.metadata.dict(exclude_none=True)
         })
 
-    # Use PostgreSQL ON CONFLICT DO NOTHING to guarantee idempotency by event_id
     stmt = insert(models.EventRecord).values(values)
     stmt = stmt.on_conflict_do_nothing(index_elements=['event_id'])
     
