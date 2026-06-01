@@ -1,15 +1,9 @@
 FROM python:3.11-slim
 WORKDIR /app
 
-# Install system dependencies required for OpenCV and Git
-RUN apt-get update && apt-get install -y \
-    git \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Clone the pipeline branch directly into the container so the backend can execute it
-RUN git clone -b pipeline https://github.com/Kr1sh-gupta/OpticRetail.git /pipeline
+# Download the pipeline branch directly as a zip (bypasses apt-get update and git entirely for maximum speed!)
+ADD https://github.com/Kr1sh-gupta/OpticRetail/archive/refs/heads/pipeline.zip /pipeline.zip
+RUN python -c "import zipfile, os; zipfile.ZipFile('/pipeline.zip').extractall('/'); os.rename('/OpticRetail-pipeline', '/pipeline'); os.remove('/pipeline.zip')"
 
 # Install backend requirements
 COPY requirements.txt .
