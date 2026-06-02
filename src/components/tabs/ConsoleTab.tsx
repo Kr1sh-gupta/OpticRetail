@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Terminal, RefreshCw, Trash2, ShieldAlert, Cpu, CheckCircle, Play } from 'lucide-react';
+import { Terminal, Trash2, ShieldAlert, Cpu, Play } from 'lucide-react';
 
 export function ConsoleTab() {
   const [status, setStatus] = useState<any>(null);

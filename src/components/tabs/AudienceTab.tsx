@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AlertCircle, CheckCircle, RefreshCw, Users, ShieldAlert, Cpu } from 'lucide-react';
+import { AlertCircle, CheckCircle, RefreshCw, Cpu } from 'lucide-react';
 
 export function AudienceTab() {
   const storeId = "STORE_BLR_002";
