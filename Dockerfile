@@ -9,8 +9,11 @@ RUN python -c "import zipfile, os; zipfile.ZipFile('/pipeline.zip').extractall('
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install pipeline requirements (Ultralytics YOLO, OpenCV, etc)
-RUN pip install --no-cache-dir opencv-python-headless ultralytics torch torchvision filterpy pandas psycopg2-binary numpy
+# Install PyTorch (CPU Only) to massively reduce download size (from ~2.5GB to ~150MB)
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Install remaining pipeline requirements
+RUN pip install --no-cache-dir opencv-python-headless ultralytics filterpy pandas psycopg2-binary numpy
 
 # Copy backend source code
 COPY . .
