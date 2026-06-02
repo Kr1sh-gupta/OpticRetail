@@ -21,6 +21,13 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://optic_user:optic_password@db:5432/optic_db
       - ENVIRONMENT=production
+      - CAM1_SOURCE=/CCTV_Footage/CAM 1.mp4
+      - CAM2_SOURCE=/CCTV_Footage/CAM 2.mp4
+      - CAM3_SOURCE=/CCTV_Footage/CAM 3.mp4
+      - CAM4_SOURCE=/CCTV_Footage/CAM 4.mp4
+      - CAM5_SOURCE=/CCTV_Footage/CAM 5.mp4
+    volumes:
+      - "../CCTV Footage:/CCTV_Footage"
       
   frontend:
     build: https://github.com/Kr1sh-gupta/OpticRetail.git#frontend
