@@ -68,12 +68,19 @@ app.include_router(pipeline.router)
 
 @app.on_event("startup")
 async def startup():
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database schema ready.")
-    except Exception as e:
-        logger.warning(f"Schema init skipped (parallel replica won the race): {type(e).__name__}")
+    import asyncio
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database schema ready.")
+            break
+        except Exception as e:
+            logger.warning(f"Database not ready yet, retrying ({attempt+1}/{max_retries})... Error: {type(e).__name__}")
+            await asyncio.sleep(3)
+    else:
+        logger.error("Failed to initialize database schema after multiple retries.")
 
 
 @app.get("/health", tags=["system"])
