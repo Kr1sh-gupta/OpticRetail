@@ -15,7 +15,9 @@ import models
 from sqlalchemy.dialects.postgresql import insert
 
 async def load_pos():
-    csv_path = r"e:\purplle\CCTV Footage\Brigade_Bangalore_10_April_26 (1)bc6219c.csv"
+    csv_path = "/CCTV_Footage/Brigade_Bangalore_10_April_26 (1)bc6219c.csv"
+    if not os.path.exists(csv_path):
+        csv_path = r"e:\purplle\CCTV Footage\Brigade_Bangalore_10_April_26 (1)bc6219c.csv"
     if not os.path.exists(csv_path):
         print(f"CSV not found at {csv_path}")
         return
