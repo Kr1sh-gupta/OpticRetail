@@ -14,6 +14,10 @@ RUN pip install --no-cache-dir torch torchvision --index-url https://download.py
 
 # Install remaining pipeline requirements
 RUN pip install --no-cache-dir opencv-python-headless ultralytics filterpy pandas psycopg2-binary numpy
+RUN pip install --no-cache-dir -r /pipeline/requirements.txt
+
+# Generate YOLO ONNX model
+RUN cd /pipeline && python setup_model.py
 
 # Copy backend source code
 COPY . .
